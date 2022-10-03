@@ -189,7 +189,11 @@ class Loader:
 
 
         idxs = int(self.size*self.percent) 
-        _files = sorted(os.listdir(images_dir)) # [:size]
+        if self.load_type == "nii.gz":
+            _files = [element for element in sorted(os.listdir(images_dir)) if "label" in element ] # [:size]
+        else:
+            _files = sorted(os.listdir(images_dir)) # [:size]
+
 
         if self.subset == 'train':
             target_ids = _files[:idxs]
@@ -205,7 +209,10 @@ class Loader:
 
 
         idxs = int(self.size*self.percent) 
-        _files = sorted(os.listdir(images_dir)) # [:size]
+        if self.load_type == "nii.gz":
+            _files = [element for element in sorted(os.listdir(images_dir)) if "volume" in element ] # [:size]
+        else:
+            _files = sorted(os.listdir(images_dir)) # [:size]
 
         if self.subset == 'train':
             input_ids = _files[:idxs]
@@ -269,21 +276,16 @@ class Loader:
     @staticmethod
     def _images_load(entrada, target):  
         entrada, target =  bytes.decode(entrada.numpy()), bytes.decode(target.numpy())
-        entrada = load_lazy(entrada) 
-        target = load_lazy(target)
+        entrada, target = load_lazy(entrada), load_lazy(target)
         return tf.data.Dataset.from_tensor_slices(entrada), tf.data.Dataset.from_tensor_slices(target) 
 
     @staticmethod
     def _images_load_npy(entrada, target):     
-        try:
-            entrada, target =  bytes.decode(entrada.numpy()), bytes.decode(target.numpy())
-            entrada_mat, target_mat = np.load(entrada), np.load(target)
-            entrada_mat, target_mat = entrada_mat.transpose(2,0,1), target_mat.transpose(2,0,1)
-        except:
-            print(entrada_mat.shape, target_mat.shape)
-            print(entrada, target)
-        # print("="*100, "\n", entrada.shape, target.shape)
-        return tf.data.Dataset.from_tensor_slices(entrada_mat), tf.data.Dataset.from_tensor_slices(target_mat) 
+        entrada, target =  bytes.decode(entrada.numpy()), bytes.decode(target.numpy())
+        entrada, target = np.load(entrada), np.load(target)
+        entrada, target = entrada.transpose(2,0,1), target.transpose(2,0,1)
+        
+        return tf.data.Dataset.from_tensor_slices(entrada), tf.data.Dataset.from_tensor_slices(target) 
 
     @staticmethod
     def _populate_cache(ds, cache_file):

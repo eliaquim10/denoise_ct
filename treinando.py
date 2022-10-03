@@ -3,7 +3,7 @@ from sr import *
 
 data_loader_train = Loader(size=5, 
                 batch_size = 2,
-                load_type = "npy",
+                load_type = "nii.gz",
                 subset='train', 
                 images_dir="/opt/notebooks/denoise_ct/dataset",
                 caches_dir="/opt/notebooks/denoise_ct/dataset/caches",
@@ -15,7 +15,7 @@ train = data_loader_train.get_elements
 
 data_loader_valid = Loader(size=5, 
                 batch_size = 2,
-                load_type = "npy",
+                load_type = "nii.gz",
                 subset='valid', 
                 images_dir="/opt/notebooks/denoise_ct/dataset",
                 caches_dir="/opt/notebooks/denoise_ct/dataset/caches",
@@ -26,14 +26,14 @@ valid = data_loader_valid.get_elements
 
 
 """
-pre_trainer = SrganGeneratorTrainer(model=generator(), checkpoint_dir=f'.ckpt/pre_generator')
-pre_trainer.train(train,
+trainer = SrganGeneratorTrainer(model=generator(), checkpoint_dir=f'.ckpt/pre_generator')
+trainer.train(train,
                   valid.take(2),
                   steps=100, 
                   evaluate_every=10, 
                   save_best_only=False)
 
-pre_trainer.model.save_weights(weights_file('pre_generator.h5'))
+trainer.model.save_weights(weights_file('pre_generator.h5'))
 """
 
 # %% [markdown]
@@ -41,63 +41,27 @@ pre_trainer.model.save_weights(weights_file('pre_generator.h5'))
 
 # %%
 
-training = True
-gan_training = True
 unet = Gerador_UNet()
 # unet_descriminador = descriminador()
 
-gan_generator = unet.generator()
-# gan_generator = generator(num_filters = 32, num_res_blocks=8)
-# discriminador = unet_descriminador.Discriminator()
-# discriminador = discriminator(16)
+generator = unet.generator()
 
-# gan_generator.load_weights(weights_file('pre_generator.h5'))
-# print(gan_generator.summary())
-
-# valor = tf.cast(np.ones((1, 256, 256, 3)), tf.float32)
-# output = gan_generator(valor, training=False)
-# print(tf.shape(output))
-# print(output)
-
-if (training):
-    gan_generator.load_weights(weights_file('pre_generator.h5'))
-    pre_trainer = GeneratorTrainer(model=gan_generator, loader = data_loader_train, checkpoint_dir=f'.ckpt/seg_pre_generator1{int(not training)}')
-    pre_trainer.train(train,
-                    valid,
-                    # steps=1000000, 
-                    steps=1000,                                                                                                                              
-                    # evaluate_every=10000, 
-                    evaluate_every=10, 
-                    save_best_only=False)
+# generator.load_weights(weights_file('pre_generator.h5'))
+trainer = GeneratorTrainer(model=generator, loader = data_loader_train, checkpoint_dir=f'.ckpt/seg_pre_generator1{int(not training)}')
+trainer.train(train,
+                valid,
+                # steps=1000000, 
+                steps=1000,                                                                                                                              
+                # evaluate_every=10000, 
+                evaluate_every=10, 
+                save_best_only=False)
 # else: 
-    pre_trainer.model.save_weights(weights_file('pre_generator.h5'))
-
-if(not training and gan_training):
-    gan_trainer = GanTrainer(generator=gan_generator, 
-                                discriminator=discriminador, 
-                                Lambda=opt.Lambda, 
-                                g_learning_rate=opt.glr,
-                                g_loss = unet.loss_generador, 
-                                d_learning_rate=opt.dlr,
-                                d_loss = unet_descriminador.loss_discriminator)
-    gan_trainer.train(train, steps=200000)
-    gan_generator.save_weights(weights_file('gan_generator.h5'))
-
-# %%
-# pre_generator = generator()
-# gan_generator = generator()
-
-# pre_generator.load_weights(weights_file('pre_generator.h5'))
-# gan_generator.load_weights(weights_file('gan_generator.h5'))
-
-# %%
-# from model import resolve_single
-# from utils import load_image
+trainer.model.save_weights(weights_file('pre_generator.h5'))
 
 def resolve_and_plot(noise_image_path):
     noise, original = noiser_np(noise_image_path)
     
-    gan_sr = resolve_single(gan_generator, noise)
+    gan_sr = resolve_single(generator, noise)
     
     plt.figure(figsize=(20, 20))
     
