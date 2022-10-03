@@ -8,27 +8,49 @@ size = 50
 class Loader:
     def __init__(self,
                  size=50,
+                 repeat = 1,
+                 batch_size = 8,
+                 load_type = "nii.gz",
                  subset='train',
                  images_dir='OS/JPEGImages',
                  caches_dir='OS/caches',
                  percent=0.5):
+        """
+            _files = sorted(os.listdir(images_dir)) # [:size]
 
-        _files = sorted(os.listdir(images_dir)) # [:size]
 
+            idxs = int(size*percent) 
 
-        idxs = int(size*percent) 
-        if subset == 'train':
-            self.input_ids = [file for file in _files if "volume" in file ][:idxs]
-            self.target_ids = [file for file in _files if "label" in file ][:idxs]
-        elif subset == 'valid':
-            self.input_ids = [file for file in _files if "volume" in file ][idxs:size]
-            self.target_ids = [file for file in _files if "label" in file ][idxs:size]
-        else:
-            raise ValueError("subset must be 'train' or 'valid'")
+            if(load_type == "nii.gz"):
+
+                if subset == 'train':
+                    self.input_ids = [file for file in _files if "volume" in file ][:idxs]
+                    self.target_ids = [file for file in _files if "label" in file ][:idxs]
+                elif subset == 'valid':
+                    self.input_ids = [file for file in _files if "volume" in file ][idxs:size]
+                    self.target_ids = [file for file in _files if "label" in file ][idxs:size]
+                else:
+                    raise ValueError("subset must be 'train' or 'valid'")
+            else:
+                if subset == 'train':
+                    self.input_ids = [file for file in os.listdir(os.path.join(images_dir, "volume"))][:idxs]
+                    self.target_ids = [file for file in os.listdir(os.path.join(images_dir, "label"))][:idxs]
+                    print("size", (self.input_ids))
+                elif subset == 'valid':
+                    self.input_ids = [file for file in os.listdir(os.path.join(images_dir, "volume"))][idxs:size]
+                    self.target_ids = [file for file in os.listdir(os.path.join(images_dir, "label"))][idxs:size]
+                else:
+                    raise ValueError("subset must be 'train' or 'valid'")
+        """
             
         self.subset = subset
         self.images_dir = images_dir
         self.caches_dir = caches_dir
+        self.batch_size = batch_size
+        self.repeat = repeat
+        self.size = size
+        self.percent = percent
+        self.load_type = load_type
         # self.caches_dir = f'{caches_dir}/{downgrade}' 
 
         os.makedirs(images_dir, exist_ok=True)
@@ -36,57 +58,85 @@ class Loader:
 
     def __len__(self):
         return len(self.image_ids)
-    @tf.autograph.experimental.do_not_convert
-    def load(self, random_transform = False):
-        # .unbatch
-        # print("entrou")
-        entrada = self.input_dataset()
-        # print(entrada)
-        # entrada = tf.data.Dataset.list_files(f'{self.images_dir}/volume*')
-        entrada
-        # print(list(entrada))
-        # entrada = entrada.map(lambda filename: load_lazy(filename))
-        entrada = tf.map_fn(fn = lambda filename: load_lazy(filename), 
-                elems=entrada, fn_output_signature=tf.RaggedTensorSpec(shape=[None, None, None], dtype =tf.float64))
-        print(entrada.shape)  
-        entrada = tf.data.Dataset.from_tensor_slices(entrada)
-        entrada = entrada.reduce(None, lambda lista, x: tf.concat(lista, x, axis=2) if lista is not None else x)
-        print(entrada)  
-        # entrada = tf.reduce(fn = lambda filename: load_lazy(filename), 
-        #         elems=entrada, fn_output_signature=tf.RaggedTensorSpec(shape=[None, None, None], dtype =tf.float64))
-        # , num_parallel_calls=AUTOTUNE
+
+    # @tf.autograph.experimental.do_not_convert
+    def load(self):
+        # ds = tf.data.Dataset.zip((self.input_dataset(), self.target_dataset()))
+        def split(s):
+            print(" s ",s)
+            s = s.split("/")[-1] 
+            s = s.split("_") 
+            print(" s ",s)
+            return int(s[1]), int(s[3].split(".")[0])
+        if(self.load_type != "nii.gz"):
+            # length = 10
+            entrada = tf.constant(self._input_image_files())
+            # entrada = [split(i) for i in entrada]
+            # entrada = [tf.constant(entrada[i:i + length]) for i in range(0, len(entrada), length)]
+            # entrada = tf.cast(entrada, dtype=tf.int16)
+            # print(entrada)
+            # exit()
+
+            targets = tf.constant(self._target_image_files())
+            # targets = [split(i) for i in targets]
+            # targets = [tf.constant(targets[i:i + length]) for i in range(0, len(targets), length)]
+            # targets = tf.cast(targets, dtype=tf.strings)
+
+            
+            entrada = tf.data.Dataset.from_tensor_slices(entrada)
+            targets = tf.data.Dataset.from_tensor_slices(targets)
+
+            ds = tf.data.Dataset.zip((entrada, targets))
+        else:
+            entrada = tf.constant(self._input_image_files())
+            targets = tf.constant(self._target_image_files())
+            
+            entrada = tf.data.Dataset.from_tensor_slices(entrada)
+            targets = tf.data.Dataset.from_tensor_slices(targets)
+
+            ds = tf.data.Dataset.zip((entrada, targets))
+
+        return ds
+
+    def load_file(self, entrada, target, batch_size=16, repeat_count=None, random_transform=True):
+        def squeze(x):
+            print("squeze", x.shape)
+            # tf.squeeze(
+            return one_hot(x)
+
+        if(self.load_type != "nii.gz"):
+            entrada, target = self._images_load_npy(entrada, target)        
+        else:
+            entrada, target = self._images_load(entrada, target)
+        # entrada, target =  bytes.decode(entrada.numpy()), bytes.decode(target.numpy())
+        # print(entrada, target)
         
+        ds = tf.data.Dataset.zip((entrada, target))
+        # if(self.load_type != "nii.gz"):
+        #     ds = ds.map(lambda x, y: (tf.expand_dims(x, axis=2), squeze(y)) , num_parallel_calls=AUTOTUNE)
+        #     # ds = ds.map(lambda x, y: (x, one_hot(y)) , num_parallel_calls=AUTOTUNE)
+        # else:
+        ds = ds.map(lambda x, y: (tf.expand_dims(x, axis=2), one_hot(y)) , num_parallel_calls=AUTOTUNE)
+
         if random_transform:
             ds = ds.map(lambda entrada, target: random_crop(entrada, target), num_parallel_calls=AUTOTUNE)
             ds = ds.map(random_rotate, num_parallel_calls=AUTOTUNE)
             ds = ds.map(random_flip, num_parallel_calls=AUTOTUNE)
-            ds = ds.batch()
-        return entrada
-
-    def load_l(self, random_transform = True):
-        # .unbatch
-        # print("entrou")
-        # print(entrada)
-        entrada = self.input_dataset()
-        targets = self.target_dataset()
-
-        ds = tf.data.Dataset.zip((entrada, targets))
-
-        if random_transform:
-            # ds = ds.map(lambda entrada, target: random_crop(entrada, target), num_parallel_calls=AUTOTUNE)
-            ds = ds.map(lambda x, y: (tf.expand_dims(x, axis=2), tf.expand_dims(y, axis=2)) , num_parallel_calls=AUTOTUNE)
-            ds = ds.map(random_rotate, num_parallel_calls=AUTOTUNE)
-            ds = ds.map(random_flip, num_parallel_calls=AUTOTUNE)
-
+            ds = ds.map(clip, num_parallel_calls=AUTOTUNE)
         
-        # reduce(lambda lista, element: np.concatenate(lista, element) if lista is not None else element, [[1,2,3,4,5], [11,22,33,34,35, 6]])
+
+        ds = ds.batch(self.batch_size)
+        ds = ds.repeat(self.repeat)
+        # ds = ds.repeat(repeat_count)
+        ds = ds.prefetch(buffer_size=AUTOTUNE)
         return ds
     
-    def one_hot(self, x):
-        indices = [1, 2, 3, 4, 5, 6]
-        x = tf.cast(x, dtype=tf.uint8)
-        x = tf.one_hot(x, len(indices))
-        return x
+    def get_elements(self):
+        dataset = self.load()
+        for file_entrada, file_target in dataset:
+            dataset = self.load_file(entrada = file_entrada, target = file_target)
+            for entrada, target in dataset:
+                yield entrada, target
 
     def dataset(self, batch_size=16, repeat_count=None, random_transform=True):
         # ds = tf.data.Dataset.zip((self.input_dataset(), self.target_dataset()))
@@ -101,6 +151,7 @@ class Loader:
             ds = ds.map(lambda entrada, target: random_crop(entrada, target), num_parallel_calls=AUTOTUNE)
             ds = ds.map(random_rotate, num_parallel_calls=AUTOTUNE)
             ds = ds.map(random_flip, num_parallel_calls=AUTOTUNE)
+            ds = ds.map(clip, num_parallel_calls=AUTOTUNE)
         
 
         ds = ds.batch(batch_size)
@@ -135,19 +186,52 @@ class Loader:
 
     def _target_image_files(self):
         images_dir = self._target_images_dir()
-        return [os.path.join(images_dir, f'{image_id}') for image_id in self.target_ids]
+
+
+        idxs = int(self.size*self.percent) 
+        _files = sorted(os.listdir(images_dir)) # [:size]
+
+        if self.subset == 'train':
+            target_ids = _files[:idxs]
+        elif self.subset == 'valid':
+            target_ids = _files[idxs:size]
+        else:
+            raise ValueError("subset must be 'train' or 'valid'")
+
+        return [os.path.join(images_dir, f'{image_id}') for image_id in target_ids]
 
     def _input_image_files(self):
         images_dir = self._input_images_dir()
-        return [os.path.join(images_dir, f'{image_id}') for image_id in self.input_ids]
+
+
+        idxs = int(self.size*self.percent) 
+        _files = sorted(os.listdir(images_dir)) # [:size]
+
+        if self.subset == 'train':
+            input_ids = _files[:idxs]
+        elif self.subset == 'valid':
+            input_ids = _files[idxs:size]
+        else:
+            raise ValueError("subset must be 'train' or 'valid'")
+        return [os.path.join(images_dir, f'{image_id}') for image_id in input_ids]
+    
+    def one_hot(self, x):
+        indices = [1, 2, 3, 4, 5, 6]
+        x = tf.cast(x, dtype=tf.uint8)
+        x = tf.one_hot(x, len(indices))
+        return x
 
     def _input_image_file(self, image_id):
         return f'{image_id}.png'
 
     def _target_images_dir(self):
+        if(self.load_type != "nii.gz"):
+            return os.path.join(self.images_dir, "label")
         return os.path.join(self.images_dir)
 
     def _input_images_dir(self):
+        if(self.load_type != "nii.gz"):
+            return os.path.join(self.images_dir, "volume")
         return os.path.join(self.images_dir)
 
     def _target_cache_file(self):
@@ -168,13 +252,38 @@ class Loader:
             else:
                 lista 
         else:
-            element 
+            element
+
+    def to_str(self, entrada, target):  
+        return bytes.decode(entrada.numpy()), bytes.decode(target.numpy())
+
     @staticmethod
     def _images_dataset(image_files):  
         images = [load_lazy(x) for x in image_files]
         images = reduce(lambda lista, element: np.vstack((lista, element)) if lista is not None else element, images)
+        images = tf.cast(images, dtype=tf.float32)
         return tf.data.Dataset.from_tensor_slices(images)   
         # return tf.constant(image_files)   
+
+
+    @staticmethod
+    def _images_load(entrada, target):  
+        entrada, target =  bytes.decode(entrada.numpy()), bytes.decode(target.numpy())
+        entrada = load_lazy(entrada) 
+        target = load_lazy(target)
+        return tf.data.Dataset.from_tensor_slices(entrada), tf.data.Dataset.from_tensor_slices(target) 
+
+    @staticmethod
+    def _images_load_npy(entrada, target):     
+        try:
+            entrada, target =  bytes.decode(entrada.numpy()), bytes.decode(target.numpy())
+            entrada_mat, target_mat = np.load(entrada), np.load(target)
+            entrada_mat, target_mat = entrada_mat.transpose(2,0,1), target_mat.transpose(2,0,1)
+        except:
+            print(entrada_mat.shape, target_mat.shape)
+            print(entrada, target)
+        # print("="*100, "\n", entrada.shape, target.shape)
+        return tf.data.Dataset.from_tensor_slices(entrada_mat), tf.data.Dataset.from_tensor_slices(target_mat) 
 
     @staticmethod
     def _populate_cache(ds, cache_file):

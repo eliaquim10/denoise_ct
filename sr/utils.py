@@ -50,14 +50,12 @@ def psnr(x1, x2):
 def load(entrada, saida):
     # Read and decode an image file to a uint8 tensor
     try:
-        # print("aqui")
-        # print(tf.decode_raw(entrada.numpy()))
         file_entrada =  bytes.decode(entrada.numpy())
         file_saida =  bytes.decode(saida.numpy())
 
         file_entrada = nib.load(file_entrada).get_fdata()
         file_saida = nib.load(file_saida).get_fdata()
-        # print(file_entrada.shape, file_saida.shape)
+
         return tf.constant(file_entrada), tf.constant(file_saida)
     except:
         print("erro")
@@ -65,12 +63,13 @@ def load(entrada, saida):
         
 def load_lazy(entrada):
     try:
-        # print("="*100)
-        # print("__dict__", entrada.__dict__)
         file_entrada = nib.load(entrada).get_fdata()
-        return file_entrada.transpose((2, 0, 1))
+        file_entrada = np.array(file_entrada.transpose((2, 0, 1)), dtype=np.float32)
+
+        return file_entrada
+        # return file_entrada.transpose((2, 0, 1)
     except:
-        print("erro")
+        print("="*100)
         return None
 
 def find_bound_box(filename):
@@ -101,35 +100,42 @@ def load_image(path):
     return tf.cast(image, tf.float32)
 
 # @tf.function()
-def inputr(img, std):
+def input_nib_l(filename, slice):
+    img = nib.load(filename).get_fdata()
 
-    new_img = tf.cast(img, tf.float32)
-    new_img = new_img / 255
+    img = tf.cast(img, tf.float32)
+    return img[:,:,slice]
 
-    input = tf.random.normal(shape = new_img.get_shape(), mean = 0.0, stddev = std, dtype = tf.float32) 
-    input_img = new_img + input
-    input_img = tf.clip_by_value(input_img, 0.0, 1.0)
-    return input_img, new_img
+def input_nib_v(filename, slice):
+    img = nib.load(filename).get_fdata()
 
-def inputr_np(filename):
-    img = np.array(Image.open(filename))
-    input = np.random.normal(127, 255, img.get_shape())
-    input_img = img + input
-    input_img = tf.clip_by_value(input_img, 0., 255.)
+    img = tf.cast(img, tf.float32)
+    img = tf.clip_by_value(img, 0.0, 1.0)
+    return img[:,:,slice]
 
-    return input_img, img
+def input_nib_(img):
+    img = tf.clip_by_value(img, -3024.0 , 1410.0)
 
-# @tf.function()
+    return img
+
+@tf.function()
+def clip(x, y):
+    x = tf.clip_by_value(x, 0., 1.)
+
+    # return x, y 
+    return x, y
+    # return tf.cast(x, dtype=tf.float16), tf.sparse.from_dense(y) 
+
+@tf.function()
 def random_crop(x, y):
 
-    # print("====", x.get_shape(), y.get_shape())
     y_shape = x.get_shape()[:2]
     
-    input_crop_size = [256, 256]
+    # input_crop_size = [256, 256]
+    input_crop_size = [128, 128]
     # input_crop_size[1] =  y_shape[1] // scale 
     # input_crop_size[0] =  y_shape[0] // scale
-    # print(input_crop_size)
-
+    
     y_w = tf.random.uniform(shape=(), maxval=y_shape[1] - input_crop_size[1] + 1, dtype=tf.int32)
     y_h = tf.random.uniform(shape=(), maxval=y_shape[0] - input_crop_size[0] + 1, dtype=tf.int32)
 
@@ -151,21 +157,24 @@ def random_rotate(input_img, target_img):
     rn = tf.random.uniform(shape=(), maxval=4, dtype=tf.int32)
     return tf.image.rot90(input_img, rn), tf.image.rot90(target_img, rn)
 
-@tf.function()
+# @tf.function()
 def one_hot(target):
     """
         0: Background (None of the following organs)
-        1: Liver
-        2: Bladder
-        3: Lungs
-        4: Kidneys
-        5: Bone
-        6: Brain
+        1: Liver (figado)
+        2: Bladder (bexiga)
+        3: Lungs (pulmao)
+        4: Kidneys (rins)
+        5: Bone (osso)
+        6: Brain (cerebro)
     """
-    indices = [1, 2, 3, 4, 5, 6]
+    indices = [0, 1, 2, 3, 4, 5, 6]
+    
+    target = tf.round(target)
     target = tf.cast(target, dtype=tf.uint8)
-    target = tf.one_hot(target, len(indices))
-    return target
+    target = tf.one_hot(target, len(indices), dtype=tf.float32)
+    # remove o blackground
+    return target[:,:,1:]
 # %%
 def resolve_single(model, input):
     return resolve(model, tf.expand_dims(input, axis=0))[0]
@@ -195,19 +204,19 @@ def resolve_mae(model, input_batch):
 
 def evaluate(model, dataset):
     psnr_values = []
-    for input, real in dataset:
-        target = resolve(model, input)
+    for input, target in dataset:
+        seg = resolve(model, input)
 
-        psnr_value = psnr(real, target)[0]
+        psnr_value = psnr(target, seg)[0]
         psnr_values.append(psnr_value)
     return tf.reduce_mean(psnr_values)
 
 def evaluate_mae(model, dataset):
     mae_values = []
-    for input, real in dataset:
-        target = resolve_mae(model, input)
+    for input, target in dataset:
+        seg = resolve_mae(model, input)
 
-        mae = metric_mae(real, target)
+        mae = metric_mae(target, seg)
         mae_values.append(mae)
     return tf.reduce_mean(mae_values)
 

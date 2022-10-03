@@ -1,21 +1,28 @@
 from sr import *
 # from '.opt' import *
 
-data_loader_train = Loader(size=10, 
+data_loader_train = Loader(size=5, 
+                batch_size = 2,
+                load_type = "npy",
                 subset='train', 
-                images_dir="/opt/notebooks/tcc/OrganSegmentations",
-                caches_dir="/opt/notebooks/tcc/dataset/caches",
+                images_dir="/opt/notebooks/denoise_ct/dataset",
+                caches_dir="/opt/notebooks/denoise_ct/dataset/caches",
                 percent=0.7)
 
-train = data_loader_train.dataset(4, random_transform=True)
+# train = data_loader_train.dataset(1, random_transform=True)
+train = data_loader_train.get_elements
 
 
-data_loader_valid = Loader(size=10, 
-                subset='train', 
-                images_dir="/opt/notebooks/tcc/OrganSegmentations",
-                caches_dir="/opt/notebooks/tcc/dataset/caches",
+data_loader_valid = Loader(size=5, 
+                batch_size = 2,
+                load_type = "npy",
+                subset='valid', 
+                images_dir="/opt/notebooks/denoise_ct/dataset",
+                caches_dir="/opt/notebooks/denoise_ct/dataset/caches",
                 percent=0.7)
-valid = data_loader_valid.dataset(4, random_transform=True, repeat_count=1)
+
+valid = data_loader_valid.get_elements
+# valid = data_loader_valid.dataset(1, random_transform=True, repeat_count=1)
 
 
 """
@@ -37,7 +44,7 @@ pre_trainer.model.save_weights(weights_file('pre_generator.h5'))
 training = True
 gan_training = True
 unet = Gerador_UNet()
-unet_descriminador = descriminador()
+# unet_descriminador = descriminador()
 
 gan_generator = unet.generator()
 # gan_generator = generator(num_filters = 32, num_res_blocks=8)
@@ -53,16 +60,16 @@ gan_generator = unet.generator()
 # print(output)
 
 if (training):
-    pre_trainer = GeneratorTrainer(model=gan_generator, checkpoint_dir=f'.ckpt/seg_pre_generator1{int(not training)}')
+    gan_generator.load_weights(weights_file('pre_generator.h5'))
+    pre_trainer = GeneratorTrainer(model=gan_generator, loader = data_loader_train, checkpoint_dir=f'.ckpt/seg_pre_generator1{int(not training)}')
     pre_trainer.train(train,
-                    valid.take(4),
+                    valid,
                     # steps=1000000, 
                     steps=1000,                                                                                                                              
                     # evaluate_every=10000, 
                     evaluate_every=10, 
                     save_best_only=False)
 # else: 
-    # gan_generator.load_weights(weights_file('pre_generator.h5'))
     pre_trainer.model.save_weights(weights_file('pre_generator.h5'))
 
 if(not training and gan_training):

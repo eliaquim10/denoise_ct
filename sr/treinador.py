@@ -6,7 +6,8 @@ class Trainer:
                  model,
                  loss,
                  learning_rate,
-                 checkpoint_dir='./ckpt/edsaida', loader =None):
+                 checkpoint_dir='./ckpt/edsaida', 
+                 loader =None):
 
         self.now = None
         self.loss = loss
@@ -32,42 +33,58 @@ class Trainer:
         ckpt = self.checkpoint
 
         self.now = time.perf_counter()
-        with tf.device("/GPU:0"):
-            for entrada, target in train_dataset.take(steps - ckpt.step.numpy()):
-                
-                ckpt.step.assign_add(1)
-                step = ckpt.step.numpy()
 
-                loss = self.train_step(entrada, target)
-                loss_mean(loss)
+        while (steps - ckpt.step.numpy()):
+        # for file_entrada, file_target in train_dataset.take(steps - ckpt.step.numpy()):
+            
+            ckpt.step.assign_add(1)
+            step = ckpt.step.numpy()
+            # dataset = self.loader.load_file(entrada = file_entrada, target = file_target)
+            
+            print(f'{step}/{steps}')
+            # print("{0} \n {1}".format(file_entrada, file_target))
+            for i, (entrada, target) in enumerate(train_dataset()):
+                if (i % 100 == 0):
+                    print(f"traing {i}") # , entrada.shape, target.shape
+                with tf.device("/GPU:0"):
+                    loss = self.train_step(entrada, target)
+                    loss_mean(loss)
 
-                if step % evaluate_every == 0:
-                    loss_value = loss_mean.result()
-                    loss_mean.reset_states()
+                    if step % evaluate_every == 0:
+                        loss_value = loss_mean.result()
+                        loss_mean.reset_states()
 
-                    # Compute PSNR on validation dataset
-                    psnr_value = self.evaluate(valid_dataset)
-                    mae_value = self.evaluate_mae(valid_dataset)
-                    with train_summary_writer.as_default():
-                        tf.summary.scalar('LOSS', loss, step=step)
-                        tf.summary.scalar('MSE', loss_value, step=step)
-                        tf.summary.scalar('MAE', mae_value, step=step)
-                        tf.summary.scalar('PSNR', psnr_value, step=step)
+                        # Compute PSNR on validation dataset
 
-                    duration = time.perf_counter() - self.now
-                    print(f'{step}/{steps}: LOSS = {loss.numpy():.3f}, MSE = {loss_value.numpy():.3f}, PSNR = {psnr_value.numpy():3f}, MAE = {mae_value.numpy():3f} ({duration:.2f}s)')
 
-                    if save_best_only and mae_value >= ckpt.mae:
-                    # if save_best_only and psnr_value <= ckpt.psnr:
+                        # for valid_dataset_current  in valid_dataset():
+                        # valid_dataset_current = self.loader.load_file(entrada = file_entrada_valid, target = file_target_valid)
+
+                        psnr_value = self.evaluate(valid_dataset())
+                        
+                        mae_value = self.evaluate_mae(valid_dataset())
+
+                        with train_summary_writer.as_default():
+                            tf.summary.scalar('LOSS', loss, step=step)
+                            tf.summary.scalar('MSE', loss_value, step=step)
+                            tf.summary.scalar('MAE', mae_value, step=step)
+                            tf.summary.scalar('PSNR', psnr_value, step=step)
+
+                        duration = time.perf_counter() - self.now
+                        print(f'{step}/{steps}: LOSS = {loss.numpy():.3f}, MSE = {loss_value.numpy():.3f}, PSNR = {psnr_value.numpy():3f}, MAE = {mae_value.numpy():3f} ({duration:.2f}s)')
+
+                        if save_best_only and mae_value >= ckpt.mae:
+                        # if save_best_only and psnr_value <= ckpt.psnr:
+                            self.now = time.perf_counter()
+                            # skip saving checkpoint, no PSNR improvement
+                            continue
+
+                        ckpt.psnr = psnr_value
+                        ckpt.mae = mae_value
+                        ckpt_mgr.save()
+
                         self.now = time.perf_counter()
-                        # skip saving checkpoint, no PSNR improvement
-                        continue
-
-                    ckpt.psnr = psnr_value
-                    ckpt.mae = mae_value
-                    ckpt_mgr.save()
-
-                    self.now = time.perf_counter()
+                            
 
     @tf.function
     def train_step(self, entrada, target):
@@ -132,7 +149,7 @@ class GanTrainer:
             with tf.device("/GPU:0"):
                 for entrada, target in train_dataset.take(steps):
                     step += 1
-                    # print(tf.shape(entrada), tf.shape(target))
+                    
                     gl, pl, dl = self.train_step(entrada, target)
 
                     pls_metric(pl)
@@ -146,19 +163,16 @@ class GanTrainer:
                         pls_metric.reset_states()
                         dls_metric.reset_states()
 
-    # @tf.function
+    @tf.function
     def train_step(self, entrada, target):
         with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
             entrada = tf.cast(entrada, tf.float32)
             target = tf.cast(target, tf.float32)
             
             saida = self.generator(entrada, training=True)
-            # print(tf.shape(entrada), tf.shape(target), tf.shape(saida),)
 
             target_output = self.discriminator([entrada, target], training=True)
             saida_output = self.discriminator([entrada, saida], training=True)
-            # print(tf.shape(target_output), tf.shape(saida_output))
-
             
             # con_loss = self._content_loss(target, saida)
             # gen_loss = self._generator_loss(saida_output)
@@ -166,9 +180,7 @@ class GanTrainer:
             # disc_loss = self._discriminator_loss(target_output, saida_output)
             disc_loss = self.d_loss(target_output, saida_output)
             
-            # print(tf.shape(saida_output), tf.shape(saida), tf.shape(target))
             perc_loss, gen_loss, _ = self.g_loss(saida_output, saida, target)
-            # print(tf.shape(perc_loss), tf.shape(gen_loss) , tf.shape(disc_loss))
 
         gradients_of_discriminator = disc_tape.gradient(disc_loss, self.discriminator.trainable_variables)
         self.discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, self.discriminator.trainable_variables))
@@ -200,8 +212,9 @@ class GeneratorTrainer(Trainer):
     def __init__(self,
                  model,
                  checkpoint_dir,
+                 loader = None,
                  learning_rate=1e-4):
-        super().__init__(model, loss=MeanSquaredError(), learning_rate=learning_rate, checkpoint_dir=checkpoint_dir)
+        super().__init__(model, loader=loader, loss=MeanSquaredError(), learning_rate=learning_rate, checkpoint_dir=checkpoint_dir)
 
     def train(self, train_dataset, valid_dataset, steps=1000000, evaluate_every=1000, save_best_only=True):
         super().train(train_dataset, valid_dataset, steps, evaluate_every, save_best_only)
