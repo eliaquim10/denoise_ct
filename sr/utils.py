@@ -1,5 +1,5 @@
-from tensorflow.python.keras.models import Model
-from tensorflow.python.keras.applications.vgg19 import VGG19
+from tensorflow.keras.models import Model
+from tensorflow.keras.applications.vgg19 import VGG19
 from .variaveis import *
 import nibabel as nib
 
@@ -40,7 +40,10 @@ def pixel_shuffle(scale):
 
 # %%
 def psnr(x1, x2):
-    return tf.image.psnr(x1, x2, max_val=255)
+    # x1 = tf.cast(x1, tf.uint8)
+    # x2 = tf.cast(x2, tf.uint8)
+
+    return tf.image.psnr(x1, x2, max_val=255) #, max_val=255
 
 # %% [markdown]
 # #### Transformacões
@@ -157,7 +160,7 @@ def random_rotate(input_img, target_img):
     rn = tf.random.uniform(shape=(), maxval=4, dtype=tf.int32)
     return tf.image.rot90(input_img, rn), tf.image.rot90(target_img, rn)
 
-# @tf.function()
+@tf.function()
 def one_hot(target):
     """
         0: Background (None of the following organs)
@@ -185,7 +188,7 @@ def resolve(model, input_batch):
     target_batch = model(input_batch)
     target_batch = tf.clip_by_value(target_batch, 0, 255)
     target_batch = tf.round(target_batch)
-    target_batch = tf.cast(target_batch, tf.uint8)
+    # target_batch = tf.cast(target_batch, tf.uint8)
     return target_batch
 
 def cast(target_batch):
@@ -204,12 +207,16 @@ def resolve_mae(model, input_batch):
 
 def evaluate(model, dataset):
     psnr_values = []
+    mae_values = []
     for input, target in dataset:
         seg = resolve(model, input)
 
+        mae = metric_mae(target, seg)
         psnr_value = psnr(target, seg)[0]
+
+        mae_values.append(mae)
         psnr_values.append(psnr_value)
-    return tf.reduce_mean(psnr_values)
+    return tf.reduce_mean(psnr_values), tf.reduce_mean(mae_values)
 
 def evaluate_mae(model, dataset):
     mae_values = []

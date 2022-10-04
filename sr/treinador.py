@@ -6,12 +6,10 @@ class Trainer:
                  model,
                  loss,
                  learning_rate,
-                 checkpoint_dir='./ckpt/edsaida', 
-                 loader =None):
+                 checkpoint_dir='./ckpt/edsaida'):
 
         self.now = None
         self.loss = loss
-        self.loader = loader
         self.checkpoint = tf.train.Checkpoint(step=tf.Variable(0),
                                               psnr=tf.Variable(-1.0),
                                               optimizer=Adam(learning_rate),
@@ -39,7 +37,6 @@ class Trainer:
             
             ckpt.step.assign_add(1)
             step = ckpt.step.numpy()
-            # dataset = self.loader.load_file(entrada = file_entrada, target = file_target)
             
             print(f'{step}/{steps}')
             # print("{0} \n {1}".format(file_entrada, file_target))
@@ -50,47 +47,43 @@ class Trainer:
                     loss = self.train_step(entrada, target)
                     loss_mean(loss)
 
-                    if step % evaluate_every == 0:
-                        loss_value = loss_mean.result()
-                        loss_mean.reset_states()
+            if step % evaluate_every == 0:
+                loss_value = loss_mean.result()
+                loss_mean.reset_states()
 
-                        # Compute PSNR on validation dataset
+                # Compute PSNR on validation dataset
 
+                psnr_value, mae_value = self.evaluate(valid_dataset())
+                
+                # mae_value = self.evaluate_mae(valid_dataset())
 
-                        # for valid_dataset_current  in valid_dataset():
-                        # valid_dataset_current = self.loader.load_file(entrada = file_entrada_valid, target = file_target_valid)
+                with train_summary_writer.as_default():
+                    tf.summary.scalar('LOSS', loss, step=step)
+                    tf.summary.scalar('MSE', loss_value, step=step)
+                    tf.summary.scalar('MAE', mae_value, step=step)
+                    tf.summary.scalar('PSNR', psnr_value, step=step)
 
-                        psnr_value = self.evaluate(valid_dataset())
-                        
-                        mae_value = self.evaluate_mae(valid_dataset())
+                duration = time.perf_counter() - self.now
+                print(f'{step}/{steps}: LOSS = {loss.numpy():.4f}, MSE = {loss_value.numpy():.4f}, PSNR = {psnr_value.numpy():4f}, MAE = {mae_value.numpy():4f} ({duration:.2f}s)')
 
-                        with train_summary_writer.as_default():
-                            tf.summary.scalar('LOSS', loss, step=step)
-                            tf.summary.scalar('MSE', loss_value, step=step)
-                            tf.summary.scalar('MAE', mae_value, step=step)
-                            tf.summary.scalar('PSNR', psnr_value, step=step)
+                if save_best_only and mae_value >= ckpt.mae:
+                # if save_best_only and psnr_value <= ckpt.psnr:
+                    self.now = time.perf_counter()
+                    # skip saving checkpoint, no PSNR improvement
+                    continue
 
-                        duration = time.perf_counter() - self.now
-                        print(f'{step}/{steps}: LOSS = {loss.numpy():.3f}, MSE = {loss_value.numpy():.3f}, PSNR = {psnr_value.numpy():3f}, MAE = {mae_value.numpy():3f} ({duration:.2f}s)')
+                ckpt.psnr = psnr_value
+                ckpt.mae = mae_value
+                ckpt_mgr.save()
 
-                        if save_best_only and mae_value >= ckpt.mae:
-                        # if save_best_only and psnr_value <= ckpt.psnr:
-                            self.now = time.perf_counter()
-                            # skip saving checkpoint, no PSNR improvement
-                            continue
-
-                        ckpt.psnr = psnr_value
-                        ckpt.mae = mae_value
-                        ckpt_mgr.save()
-
-                        self.now = time.perf_counter()
+                self.now = time.perf_counter()
                             
 
     @tf.function
     def train_step(self, entrada, target):
         with tf.GradientTape() as tape:
-            entrada = tf.cast(entrada, tf.float32)
-            target = tf.cast(target, tf.float32)
+            # entrada = tf.cast(entrada, tf.float32)
+            # target = tf.cast(target, tf.float32)
 
             saida = self.checkpoint.model(entrada, training=True)
             loss_value = self.loss(target, saida)
@@ -212,9 +205,8 @@ class GeneratorTrainer(Trainer):
     def __init__(self,
                  model,
                  checkpoint_dir,
-                 loader = None,
                  learning_rate=1e-4):
-        super().__init__(model, loader=loader, loss=MeanSquaredError(), learning_rate=learning_rate, checkpoint_dir=checkpoint_dir)
+        super().__init__(model, loss=MeanSquaredError(), learning_rate=learning_rate, checkpoint_dir=checkpoint_dir)
 
     def train(self, train_dataset, valid_dataset, steps=1000000, evaluate_every=1000, save_best_only=True):
         super().train(train_dataset, valid_dataset, steps, evaluate_every, save_best_only)

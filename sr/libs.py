@@ -1,12 +1,13 @@
 from tensorflow.keras.layers import Add, BatchNormalization, Conv2D, Dense, Flatten, Input, LeakyReLU, PReLU, Lambda
 from tensorflow.keras.models import Model
 from tensorflow.keras.applications.vgg19 import VGG19
+from tensorflow.keras.activations import relu
 
 # from model.common import pixel_shuffle, normalize_01, normalize_m11, denormalize_m11
 
-import time
+# import time
 import tensorflow as tf
-import datetime
+# import datetime
 
 
 # from model import evaluate
