@@ -53,7 +53,8 @@ class Trainer:
 
                 # Compute PSNR on validation dataset
 
-                psnr_value, mae_value = self.evaluate(valid_dataset())
+                with tf.device("/GPU:0"):
+                    psnr_value, mae_value = self.evaluate(valid_dataset())
                 
                 # mae_value = self.evaluate_mae(valid_dataset())
 

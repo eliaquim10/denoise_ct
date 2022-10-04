@@ -8,50 +8,35 @@ size = 50
 class Loader:
     def __init__(self,
                  size=50,
-                 repeat = 1,
+                 repeat = None,
                  batch_size = 8,
                  load_type = "nii.gz",
                  subset='train',
                  images_dir='OS/JPEGImages',
                  caches_dir='OS/caches',
                  percent=0.5):
-        """
-            _files = sorted(os.listdir(images_dir)) # [:size]
-
-
-            idxs = int(size*percent) 
-
-            if(load_type == "nii.gz"):
-
-                if subset == 'train':
-                    self.input_ids = [file for file in _files if "volume" in file ][:idxs]
-                    self.target_ids = [file for file in _files if "label" in file ][:idxs]
-                elif subset == 'valid':
-                    self.input_ids = [file for file in _files if "volume" in file ][idxs:size]
-                    self.target_ids = [file for file in _files if "label" in file ][idxs:size]
-                else:
-                    raise ValueError("subset must be 'train' or 'valid'")
-            else:
-                if subset == 'train':
-                    self.input_ids = [file for file in os.listdir(os.path.join(images_dir, "volume"))][:idxs]
-                    self.target_ids = [file for file in os.listdir(os.path.join(images_dir, "label"))][:idxs]
-                    print("size", (self.input_ids))
-                elif subset == 'valid':
-                    self.input_ids = [file for file in os.listdir(os.path.join(images_dir, "volume"))][idxs:size]
-                    self.target_ids = [file for file in os.listdir(os.path.join(images_dir, "label"))][idxs:size]
-                else:
-                    raise ValueError("subset must be 'train' or 'valid'")
-        """
             
         self.subset = subset
         self.images_dir = images_dir
         self.caches_dir = caches_dir
         self.batch_size = batch_size
-        self.repeat = repeat
+        # self.repeat = repeat
         self.size = size
         self.percent = percent
         self.load_type = load_type
+        self.shuffle = 1000
         # self.caches_dir = f'{caches_dir}/{downgrade}' 
+
+        if repeat:
+            if self.subset == 'train':            
+                self.repeat = 10
+            elif self.subset == 'valid':            
+                self.repeat = 1
+            else:
+                raise ValueError("subset must be 'train' or 'valid'")
+        else:
+            self.repeat = 1
+
 
         os.makedirs(images_dir, exist_ok=True)
         os.makedirs(caches_dir, exist_ok=True)
@@ -62,12 +47,7 @@ class Loader:
     # @tf.autograph.experimental.do_not_convert
     def load(self):
         # ds = tf.data.Dataset.zip((self.input_dataset(), self.target_dataset()))
-        def split(s):
-            print(" s ",s)
-            s = s.split("/")[-1] 
-            s = s.split("_") 
-            print(" s ",s)
-            return int(s[1]), int(s[3].split(".")[0])
+
         if(self.load_type != "nii.gz"):
             # length = 10
             entrada = tf.constant(self._input_image_files())
@@ -98,11 +78,7 @@ class Loader:
 
         return ds
 
-    def load_file(self, entrada, target, batch_size=16, repeat_count=None, random_transform=True):
-        def squeze(x):
-            print("squeze", x.shape)
-            # tf.squeeze(
-            return one_hot(x)
+    def load_file(self, entrada, target, random_transform=True):
 
         if(self.load_type != "nii.gz"):
             entrada, target = self._images_load_npy(entrada, target)        
@@ -118,13 +94,13 @@ class Loader:
         # else:
         ds = ds.map(lambda x, y: (tf.expand_dims(x, axis=2), one_hot(y)) , num_parallel_calls=AUTOTUNE)
 
-        if random_transform:
-            ds = ds.map(lambda entrada, target: random_crop(entrada, target), num_parallel_calls=AUTOTUNE)
+        if random_transform or self.subset == "train":
+            ds = ds.map(lambda entrada, target: self.random_crop(entrada, target), num_parallel_calls=AUTOTUNE)
             ds = ds.map(random_rotate, num_parallel_calls=AUTOTUNE)
             ds = ds.map(random_flip, num_parallel_calls=AUTOTUNE)
-            ds = ds.map(clip, num_parallel_calls=AUTOTUNE)
-        
 
+        ds = ds.map(clip, num_parallel_calls=AUTOTUNE)        
+        ds = ds.shuffle(self.shuffle)
         ds = ds.batch(self.batch_size)
         ds = ds.repeat(self.repeat)
         # ds = ds.repeat(repeat_count)
@@ -148,7 +124,7 @@ class Loader:
 
         if random_transform:
             ds = ds.map(lambda x, y: (tf.expand_dims(x, axis=2), one_hot(y)) , num_parallel_calls=AUTOTUNE)
-            ds = ds.map(lambda entrada, target: random_crop(entrada, target), num_parallel_calls=AUTOTUNE)
+            ds = ds.map(lambda entrada, target: self.random_crop(entrada, target), num_parallel_calls=AUTOTUNE)
             ds = ds.map(random_rotate, num_parallel_calls=AUTOTUNE)
             ds = ds.map(random_flip, num_parallel_calls=AUTOTUNE)
             ds = ds.map(clip, num_parallel_calls=AUTOTUNE)
@@ -222,11 +198,10 @@ class Loader:
             raise ValueError("subset must be 'train' or 'valid'")
         return [os.path.join(images_dir, f'{image_id}') for image_id in input_ids]
     
-    def one_hot(self, x):
-        indices = [1, 2, 3, 4, 5, 6]
-        x = tf.cast(x, dtype=tf.uint8)
-        x = tf.one_hot(x, len(indices))
-        return x
+    def random_crop(self, entrada, target):
+        if self.load_type == "nii.gz":
+            return random_crop(entrada, target, 256)
+        return random_crop(entrada, target, 128)
 
     def _input_image_file(self, image_id):
         return f'{image_id}.png'

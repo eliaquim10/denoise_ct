@@ -130,12 +130,11 @@ def clip(x, y):
     # return tf.cast(x, dtype=tf.float16), tf.sparse.from_dense(y) 
 
 @tf.function()
-def random_crop(x, y):
+def random_crop(x, y, size):
 
     y_shape = x.get_shape()[:2]
     
-    # input_crop_size = [256, 256]
-    input_crop_size = [128, 128]
+    input_crop_size = [size, size]
     # input_crop_size[1] =  y_shape[1] // scale 
     # input_crop_size[0] =  y_shape[0] // scale
     
