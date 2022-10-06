@@ -15,21 +15,25 @@ import datetime
 
 from tensorflow.keras.applications.vgg19 import preprocess_input
 from tensorflow.keras.losses import BinaryCrossentropy
-from tensorflow.keras.losses import MeanAbsoluteError
-from tensorflow.keras.losses import MeanSquaredError
-from tensorflow.keras.metrics import Mean
+# from tensorflow.keras.losses import MeanAbsoluteError
+# from tensorflow.keras.losses import MeanSquaredError
+from tensorflow.keras.losses import SparseCategoricalCrossentropy
+from tensorflow.keras.metrics import Mean, RootMeanSquaredError, MeanSquaredError, MeanAbsoluteError
+# MeanSquaredError
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.optimizers.schedules import PiecewiseConstantDecay
 
 
 from tensorflow.python.data.experimental import AUTOTUNE
-
 import os
 
 import numpy as np
 import matplotlib.pyplot as plt
 
 from PIL import Image
+from tqdm import trange, tqdm
+import nibabel as nib
+
 # %matplotlib inline
 
 import argparse

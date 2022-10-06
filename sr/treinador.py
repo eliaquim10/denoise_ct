@@ -33,16 +33,13 @@ class Trainer:
         self.now = time.perf_counter()
 
         while (steps - ckpt.step.numpy()):
-        # for file_entrada, file_target in train_dataset.take(steps - ckpt.step.numpy()):
             
             ckpt.step.assign_add(1)
             step = ckpt.step.numpy()
-            
             print(f'{step}/{steps}')
-            # print("{0} \n {1}".format(file_entrada, file_target))
-            for i, (entrada, target) in enumerate(train_dataset()):
-                if (i % 100 == 0):
-                    print(f"traing {i}") # , entrada.shape, target.shape
+            # ckpt.step = step
+
+            for entrada, target in train_dataset():
                 with tf.device("/GPU:0"):
                     loss = self.train_step(entrada, target)
                     loss_mean(loss)
@@ -54,26 +51,27 @@ class Trainer:
                 # Compute PSNR on validation dataset
 
                 with tf.device("/GPU:0"):
-                    psnr_value, mae_value = self.evaluate(valid_dataset())
+                    mse_value, rmse_value, mae_value = self.evaluate(valid_dataset())
                 
                 # mae_value = self.evaluate_mae(valid_dataset())
 
                 with train_summary_writer.as_default():
-                    tf.summary.scalar('LOSS', loss, step=step)
-                    tf.summary.scalar('MSE', loss_value, step=step)
+                    # tf.summary.scalar('LOSS', loss, step=step)
+                    tf.summary.scalar('LOSS', loss_value, step=step)
                     tf.summary.scalar('MAE', mae_value, step=step)
-                    tf.summary.scalar('PSNR', psnr_value, step=step)
+                    tf.summary.scalar('MSE', mse_value, step=step)
+                    tf.summary.scalar('RMSE', rmse_value, step=step)
 
                 duration = time.perf_counter() - self.now
-                print(f'{step}/{steps}: LOSS = {loss.numpy():.4f}, MSE = {loss_value.numpy():.4f}, PSNR = {psnr_value.numpy():4f}, MAE = {mae_value.numpy():4f} ({duration:.2f}s)')
-
+                print(f'{step}/{steps}: LOSS = {loss_value.numpy():.4f}, MSE = {mse_value.numpy():.4f}, RMSE = {mse_value.numpy():.4f}, MAE = {mae_value.numpy():4f} ({duration:.2f}s)')
+                
                 if save_best_only and mae_value >= ckpt.mae:
                 # if save_best_only and psnr_value <= ckpt.psnr:
                     self.now = time.perf_counter()
                     # skip saving checkpoint, no PSNR improvement
                     continue
 
-                ckpt.psnr = psnr_value
+                ckpt.mse = mse_value
                 ckpt.mae = mae_value
                 ckpt_mgr.save()
 
@@ -206,8 +204,9 @@ class GeneratorTrainer(Trainer):
     def __init__(self,
                  model,
                  checkpoint_dir,
+                 loss=MeanSquaredError(),
                  learning_rate=1e-4):
-        super().__init__(model, loss=MeanSquaredError(), learning_rate=learning_rate, checkpoint_dir=checkpoint_dir)
+        super().__init__(model, loss=loss, learning_rate=learning_rate, checkpoint_dir=checkpoint_dir)
 
     def train(self, train_dataset, valid_dataset, steps=1000000, evaluate_every=1000, save_best_only=True):
         super().train(train_dataset, valid_dataset, steps, evaluate_every, save_best_only)

@@ -1,7 +1,6 @@
 from functools import reduce
 from .utils import *
-from tensorflow.python.data.experimental import AUTOTUNE
-import nibabel as nib
+
 
 size = 50
 
@@ -27,15 +26,15 @@ class Loader:
         self.shuffle = 1000
         # self.caches_dir = f'{caches_dir}/{downgrade}' 
 
-        if repeat:
-            if self.subset == 'train':            
-                self.repeat = 10
-            elif self.subset == 'valid':            
-                self.repeat = 1
-            else:
-                raise ValueError("subset must be 'train' or 'valid'")
-        else:
-            self.repeat = 1
+        # if repeat:
+        #     if self.subset == 'train':            
+        #         self.repeat = 10
+        #     elif self.subset == 'valid':            
+        #         self.repeat = 1
+        #     else:
+        #         raise ValueError("subset must be 'train' or 'valid'")
+        # else:
+        self.repeat = 1
 
 
         os.makedirs(images_dir, exist_ok=True)
@@ -78,7 +77,7 @@ class Loader:
 
         return ds
 
-    def load_file(self, entrada, target, random_transform=True):
+    def load_file(self, entrada, target, random_transform=False):
 
         if(self.load_type != "nii.gz"):
             entrada, target = self._images_load_npy(entrada, target)        
@@ -92,9 +91,10 @@ class Loader:
         #     ds = ds.map(lambda x, y: (tf.expand_dims(x, axis=2), squeze(y)) , num_parallel_calls=AUTOTUNE)
         #     # ds = ds.map(lambda x, y: (x, one_hot(y)) , num_parallel_calls=AUTOTUNE)
         # else:
-        ds = ds.map(lambda x, y: (tf.expand_dims(x, axis=2), one_hot(y)) , num_parallel_calls=AUTOTUNE)
+        # ds = ds.map(lambda x, y: (expand_dims(x), one_hot(y)) , num_parallel_calls=AUTOTUNE) # meansquareerro
+        ds = ds.map(lambda x, y: (expand_dims(x), expand_dims(y)) , num_parallel_calls=AUTOTUNE)
 
-        if random_transform or self.subset == "train":
+        if random_transform:
             ds = ds.map(lambda entrada, target: self.random_crop(entrada, target), num_parallel_calls=AUTOTUNE)
             ds = ds.map(random_rotate, num_parallel_calls=AUTOTUNE)
             ds = ds.map(random_flip, num_parallel_calls=AUTOTUNE)
@@ -110,7 +110,7 @@ class Loader:
     def get_elements(self):
         dataset = self.load()
         for file_entrada, file_target in dataset:
-            dataset = self.load_file(entrada = file_entrada, target = file_target)
+            dataset = self.load_file(entrada = file_entrada, target = file_target, random_transform = self.subset == "train")
             for entrada, target in dataset:
                 yield entrada, target
 
@@ -121,15 +121,15 @@ class Loader:
         targets = self.target_dataset()
 
         ds = tf.data.Dataset.zip((entrada, targets))
+        ds = ds.map(lambda x, y: (expand_dims(x), one_hot(y)) , num_parallel_calls=AUTOTUNE)
 
-        if random_transform:
-            ds = ds.map(lambda x, y: (tf.expand_dims(x, axis=2), one_hot(y)) , num_parallel_calls=AUTOTUNE)
+        if random_transform or self.subset == "train":
             ds = ds.map(lambda entrada, target: self.random_crop(entrada, target), num_parallel_calls=AUTOTUNE)
             ds = ds.map(random_rotate, num_parallel_calls=AUTOTUNE)
             ds = ds.map(random_flip, num_parallel_calls=AUTOTUNE)
-            ds = ds.map(clip, num_parallel_calls=AUTOTUNE)
         
 
+        ds = ds.map(clip, num_parallel_calls=AUTOTUNE)
         ds = ds.batch(batch_size)
         ds = ds.repeat(repeat_count)
         ds = ds.prefetch(buffer_size=AUTOTUNE)
@@ -199,8 +199,9 @@ class Loader:
         return [os.path.join(images_dir, f'{image_id}') for image_id in input_ids]
     
     def random_crop(self, entrada, target):
-        if self.load_type == "nii.gz":
-            return random_crop(entrada, target, 256)
+        # if self.subset == "valid":
+        # # if self.load_type == "nii.gz":
+        #     return random_crop(entrada, target, 256)
         return random_crop(entrada, target, 128)
 
     def _input_image_file(self, image_id):
@@ -257,8 +258,9 @@ class Loader:
     @staticmethod
     def _images_load_npy(entrada, target):     
         entrada, target =  bytes.decode(entrada.numpy()), bytes.decode(target.numpy())
-        entrada, target = np.load(entrada), np.load(target)
-        entrada, target = entrada.transpose(2,0,1), target.transpose(2,0,1)
+        entrada, target = load_lazy(entrada), load_lazy(target)
+        # entrada, target = entrada.transpose(2,0,1), target.transpose(2,0,1)
+        entrada, target = tf.cast(entrada, tf.float32), tf.cast(target, tf.float32)
         
         return tf.data.Dataset.from_tensor_slices(entrada), tf.data.Dataset.from_tensor_slices(target) 
 

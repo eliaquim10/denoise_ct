@@ -1,3 +1,4 @@
+from time import sleep
 from tensorflow.keras.models import Model
 from tensorflow.keras.applications.vgg19 import VGG19
 from .variaveis import *
@@ -67,7 +68,7 @@ def load(entrada, saida):
 def load_lazy(entrada):
     try:
         file_entrada = nib.load(entrada).get_fdata()
-        file_entrada = np.array(file_entrada.transpose((2, 0, 1)), dtype=np.float32)
+        file_entrada = file_entrada.transpose((2, 0, 1))# np.array(, dtype=np.float32)
 
         return file_entrada
         # return file_entrada.transpose((2, 0, 1)
@@ -105,7 +106,8 @@ def load_image(path):
 # @tf.function()
 def input_nib_l(filename, slice):
     img = nib.load(filename).get_fdata()
-
+    print(img.shape)
+    # img = img.slicer[:,:,slice]
     img = tf.cast(img, tf.float32)
     return img[:,:,slice]
 
@@ -177,7 +179,11 @@ def one_hot(target):
     target = tf.one_hot(target, len(indices), dtype=tf.float32)
     # remove o blackground
     return target[:,:,1:]
-# %%
+
+@tf.function()
+def expand_dims(input):
+    return tf.expand_dims(input, axis=2)
+
 def resolve_single(model, input):
     return resolve(model, tf.expand_dims(input, axis=0))[0]
 
@@ -185,7 +191,7 @@ def resolve_single(model, input):
 def resolve(model, input_batch):
     input_batch = tf.cast(input_batch, tf.float32)
     target_batch = model(input_batch)
-    target_batch = tf.clip_by_value(target_batch, 0, 255)
+    # target_batch = tf.clip_by_value(target_batch, 0, 255)
     target_batch = tf.round(target_batch)
     # target_batch = tf.cast(target_batch, tf.uint8)
     return target_batch
@@ -203,19 +209,24 @@ def resolve_mae(model, input_batch):
     target_batch = tf.round(target_batch)
     return target_batch
 
-
+# @tf.function()
 def evaluate(model, dataset):
-    psnr_values = []
+    rmse_values = []
+    mse_values = []
     mae_values = []
     for input, target in dataset:
         seg = resolve(model, input)
-
-        mae = metric_mae(target, seg)
-        psnr_value = psnr(target, seg)[0]
-
-        mae_values.append(mae)
-        psnr_values.append(psnr_value)
-    return tf.reduce_mean(psnr_values), tf.reduce_mean(mae_values)
+        # one_target = one_hot(target)
+        metric_mae.update_state(target, seg) # mae_value = 
+        metric_mse.update_state(target, seg) # mse_value = 
+        metric_rmse.update_state(target, seg) # rmse_value = 
+        
+        mae_values.append(metric_mae.result())
+        mse_values.append(metric_mse.result())
+        rmse_values.append(metric_rmse.result())
+    # sleep(0.01)
+    
+    return tf.reduce_mean(mse_values), tf.reduce_mean(rmse_values), tf.reduce_mean(mae_values)
 
 def evaluate_mae(model, dataset):
     mae_values = []
@@ -226,10 +237,14 @@ def evaluate_mae(model, dataset):
         mae_values.append(mae)
     return tf.reduce_mean(mae_values)
 
-weights_dir = 'weights/srgan'
-weights_file = lambda filename: os.path.join(weights_dir, filename)
-
-os.makedirs(weights_dir, exist_ok=True)
+# weights_file = lambda dir, filename: os.path.join(dir, weights_dir, filename)
+def weights_file(dir_file, filename):
+    weights_dir = 'weights/srgan'
+    os.makedirs(weights_dir, exist_ok=True)
+    if dir_file:
+        return os.path.join(dir_file, weights_dir, filename)
+    return os.path.join(weights_dir, filename)
+# os.makedirs(weights_dir, exist_ok=True)
 
 def resolve_single(model, target):
     return resolve(model, tf.expand_dims(target, axis=0))[0]
