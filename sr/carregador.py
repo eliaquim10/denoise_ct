@@ -77,6 +77,10 @@ class Loader:
 
         return ds
 
+    def load_slice(self, file_entrada, file_target):
+        for entrada, target in self._images_load_slice(file_entrada, file_target):
+            yield tf.data.Dataset.zip((entrada, target))
+
     def load_file(self, entrada, target, random_transform=False):
 
         if(self.load_type != "nii.gz"):
@@ -92,14 +96,40 @@ class Loader:
         #     # ds = ds.map(lambda x, y: (x, one_hot(y)) , num_parallel_calls=AUTOTUNE)
         # else:
         # ds = ds.map(lambda x, y: (expand_dims(x), one_hot(y)) , num_parallel_calls=AUTOTUNE) # meansquareerro
-        ds = ds.map(lambda x, y: (expand_dims(x), expand_dims(y)) , num_parallel_calls=AUTOTUNE)
+
+
+        # ds = ds.map(lambda x, y: (expand_dims(x), expand_dims(y)) , num_parallel_calls=AUTOTUNE)
+        # ds = ds.map(lambda entrada, target: self.random_crop(entrada, target), num_parallel_calls=AUTOTUNE)
+
+        # if random_transform:
+        #     ds = ds.map(random_rotate, num_parallel_calls=AUTOTUNE)
+        #     ds = ds.map(random_flip, num_parallel_calls=AUTOTUNE)
+
+        # ds = ds.map(clip, num_parallel_calls=AUTOTUNE)        
+        # ds = ds.shuffle(self.shuffle)
+        # ds = ds.batch(self.batch_size)
+        # ds = ds.repeat(self.repeat)
+        # # ds = ds.repeat(repeat_count)
+        # ds = ds.prefetch(buffer_size=AUTOTUNE)
+        # return ds
+        return self.pre_processing(ds, random_transform)
+    
+    def pre_processing(self, ds, random_transform):
+        # ds = ds.map(lambda x, y: (expand_dims(x), one_hot(y)) , num_parallel_calls=AUTOTUNE) # meansquareerro
+
+        # ds = ds.map(lambda entrada, target: (expand_dims(entrada), expand_dims(target)) , num_parallel_calls=AUTOTUNE)
+        # slice_lung
+        # ds = ds.map(lambda entrada, target: (expand_dims(entrada), one_hot(target)) , num_parallel_calls=AUTOTUNE)
+        ds = ds.map(lambda entrada, target: (expand_dims(entrada), slice_lung(target)) , num_parallel_calls=AUTOTUNE)
+        ds = ds.map(lambda entrada, target: self.random_crop(entrada, target), num_parallel_calls=AUTOTUNE)
+        
+        ds = ds.filter(lambda _, target: tf.reduce_sum(target) > 3000)
 
         if random_transform:
-            ds = ds.map(lambda entrada, target: self.random_crop(entrada, target), num_parallel_calls=AUTOTUNE)
             ds = ds.map(random_rotate, num_parallel_calls=AUTOTUNE)
             ds = ds.map(random_flip, num_parallel_calls=AUTOTUNE)
 
-        ds = ds.map(clip, num_parallel_calls=AUTOTUNE)        
+        # ds = ds.map(clip, num_parallel_calls=AUTOTUNE)        
         ds = ds.shuffle(self.shuffle)
         ds = ds.batch(self.batch_size)
         ds = ds.repeat(self.repeat)
@@ -110,9 +140,15 @@ class Loader:
     def get_elements(self):
         dataset = self.load()
         for file_entrada, file_target in dataset:
-            dataset = self.load_file(entrada = file_entrada, target = file_target, random_transform = self.subset == "train")
+            dataset = self.load_file(entrada = file_entrada, target = file_target, random_transform = self.subset == "train") 
             for entrada, target in dataset:
                 yield entrada, target
+        
+        # dataset = self.load()
+        # for file_entrada, file_target in dataset:
+        #     for ds in self.load_slice(file_entrada, file_target):
+        #         for entrada, target in self.pre_processing(ds):
+        #             yield entrada, target
 
     def dataset(self, batch_size=16, repeat_count=None, random_transform=True):
         # ds = tf.data.Dataset.zip((self.input_dataset(), self.target_dataset()))
@@ -174,7 +210,8 @@ class Loader:
         if self.subset == 'train':
             target_ids = _files[:idxs]
         elif self.subset == 'valid':
-            target_ids = _files[idxs:size]
+            limiar = int(self.size*(self.percent + 0.2)) 
+            target_ids = _files[idxs:limiar]
         else:
             raise ValueError("subset must be 'train' or 'valid'")
 
@@ -193,7 +230,8 @@ class Loader:
         if self.subset == 'train':
             input_ids = _files[:idxs]
         elif self.subset == 'valid':
-            input_ids = _files[idxs:size]
+            limiar = int(self.size*(self.percent + 0.2)) 
+            input_ids = _files[idxs:limiar]
         else:
             raise ValueError("subset must be 'train' or 'valid'")
         return [os.path.join(images_dir, f'{image_id}') for image_id in input_ids]
@@ -201,7 +239,7 @@ class Loader:
     def random_crop(self, entrada, target):
         # if self.subset == "valid":
         # # if self.load_type == "nii.gz":
-        #     return random_crop(entrada, target, 256)
+        # return random_crop(entrada, target, 256)
         return random_crop(entrada, target, 128)
 
     def _input_image_file(self, image_id):
@@ -253,6 +291,7 @@ class Loader:
     def _images_load(entrada, target):  
         entrada, target =  bytes.decode(entrada.numpy()), bytes.decode(target.numpy())
         entrada, target = load_lazy(entrada), load_lazy(target)
+        # target = tf.subtract(1, target)
         return tf.data.Dataset.from_tensor_slices(entrada), tf.data.Dataset.from_tensor_slices(target) 
 
     @staticmethod
@@ -263,6 +302,27 @@ class Loader:
         entrada, target = tf.cast(entrada, tf.float32), tf.cast(target, tf.float32)
         
         return tf.data.Dataset.from_tensor_slices(entrada), tf.data.Dataset.from_tensor_slices(target) 
+    
+    @staticmethod
+    def _images_load_slice(entrada, target, slice = 40):  
+        entrada, target =  bytes.decode(entrada.numpy()), bytes.decode(target.numpy())
+        # entrada, target = load_lazy(entrada), load_lazy(target)
+        entrada, target = nib.load(entrada), nib.load(target)
+        for i in range(entrada.shape[-1]):
+            entrada_slicer = entrada.slicer[:,:,i:i + slice]
+            entrada_slicer = entrada_slicer.get_fdata()
+            entrada_slicer = entrada_slicer.transpose((2,0,1))
+
+            target_slicer = target.slicer[:,:,i:i + slice]
+            target_slicer = target_slicer.get_fdata()
+            target_slicer = target_slicer.transpose((2,0,1))
+            
+            # print(entrada_slicer.shape, target_slicer.shape)
+            yield tf.data.Dataset.from_tensor_slices(entrada_slicer), \
+                tf.data.Dataset.from_tensor_slices(target_slicer) 
+            # yield tf.data.Dataset.from_tensor_slices(entrada.slicer[:,:,i:i + slice].get_fdata().transpose((2,0,1))), \
+            #     tf.data.Dataset.from_tensor_slices(target.slicer[:,:,i:i + slice].get_fdata().transpose((2,0,1))) 
+
 
     @staticmethod
     def _populate_cache(ds, cache_file):

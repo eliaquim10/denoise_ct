@@ -1,4 +1,5 @@
 from multiprocessing import pool
+# from unicodedata import name
 from .utils import *
 from .libs import *
 
@@ -41,12 +42,17 @@ def sr_resnet(num_filters=64, num_res_blocks=16):
     return Model(x_in, x)
 
 
-generator = sr_resnet
+# generator = sr_resnet
 
 class Gerador_UNet():
     def __init__(self, LAMBDA = 100, loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)) -> None:
         self.loss = loss 
         self.LAMBDA = LAMBDA
+
+        self.inputs = None
+        self.down_stack = []
+        self.up_stack = []
+        self.last = None
         
     def upsample(self, filters, size, apply_dropout=False):
         initializer = tf.random_normal_initializer(0., 0.02)
@@ -77,85 +83,205 @@ class Gerador_UNet():
 
         return result
 
-    def downsample(self, filters, size, apply_batchnorm=True):
+    def downsample(self, filters, apply_batchnorm=True):
         initializer = tf.random_normal_initializer(0., 0.02)
 
-        result = tf.keras.Sequential()
+        result = tf.keras.Sequential()        
+
         result.add(
             tf.keras.layers.Conv2D(filters, 3, strides=1, padding='same',
-                                    kernel_initializer=initializer, 
-                                    activation=tf.keras.activations.relu,
-                                    )) # use_bias=False
+                                    kernel_initializer=initializer)) # use_bias=False
+        if apply_batchnorm:
+            result.add(tf.keras.layers.BatchNormalization())
+        result.add(ReLU())
+
         result.add(
             tf.keras.layers.Conv2D(filters, 3, strides=1, padding='same',
-                                    kernel_initializer=initializer, 
-                                    activation=tf.keras.activations.relu,
-                                    )) # use_bias=False
-        
+                                    kernel_initializer=initializer)) # use_bias=False
+        if apply_batchnorm:
+            result.add(tf.keras.layers.BatchNormalization())
+        result.add(ReLU())
+
         result.add(
             tf.keras.layers.MaxPooling2D(pool_size=(2,2), strides=1, padding='same',
                                     )) # use_bias=False
-
-        if apply_batchnorm:
-            result.add(tf.keras.layers.BatchNormalization())
-
-        # result.add(tf.keras.layers.LeakyReLU())
+                                    
+        result.add(
+            tf.keras.layers.Dropout(0.3)) 
 
         return result
+    
+    def downsample_modify(self, filters):
+        initializer = tf.random_normal_initializer(0., 0.02)
+
+        # result = tf.keras.Sequential()        
+        def func(x):
+            f = Conv2D(filters, 3, strides=1, padding='same',
+                                    kernel_initializer=initializer,
+                                    activation=relu)(x) # use_bias=False
+        
+            f = Conv2D(filters, 3, strides=1, padding='same',
+                                    kernel_initializer=initializer,
+                                    activation=relu)(f) # use_bias=False       
+
+        
+            p = MaxPooling2D(pool_size=(2,2), strides=1, padding='same')(f) # use_bias=False
+            # p = Dropout(0.3)(p)
+            return f, p 
+
+        return func
 
     def generator(self):
-        inputs = tf.keras.layers.Input(shape=[None, None, 1])
+        """
+            down_stack = [
+                self.downsample(8, 3, apply_batchnorm=True),  # (batch_size, 256, 256, 3) vs (batch_size, 128, 128, 64)
+                self.downsample(16, 3),  # (batch_size, 128, 128, 64) vs (batch_size, 64, 64, 128)
+                self.downsample(32, 3),  # (batch_size, 64, 64, 128) vs (batch_size, 32, 32, 256)
+                self.downsample(64, 3),  # (batch_size, 32, 32, 256) vs (batch_size, 16, 16, 512)
+                self.downsample(64, 3),  # (batch_size, 16, 16, 512) vs (batch_size, 8, 8, 512)
+            ]
+
+            up_stack = [
+                self.upsample(64, 3),  # (batch_size, 8, 8, 64) vs (batch_size, 16, 16, 1024)
+                self.upsample(32, 3),  # (batch_size, 16, 16, 64) vs (batch_size, 32, 32, 512)
+                self.upsample(16, 3),  # (batch_size, 32, 32, 64) vs (batch_size, 64, 64, 256)
+                self.upsample(8, 3),  # (batch_size, 64, 64, 64) vs (batch_size, 128, 128, 128)
+            ]
+
+            down_stack = [
+                self.downsample(64, 3, apply_batchnorm=True),  # (batch_size, 256, 256, 3) vs (batch_size, 128, 128, 64)
+                self.downsample(64*2, 3),  # (batch_size, 128, 128, 64) vs (batch_size, 64, 64, 128)
+                self.downsample(64*4, 3),  # (batch_size, 64, 64, 128) vs (batch_size, 32, 32, 256)
+                self.downsample(64*8, 3),  # (batch_size, 32, 32, 256) vs (batch_size, 16, 16, 512)
+                self.downsample(64*16, 3),  # (batch_size, 16, 16, 512) vs (batch_size, 8, 8, 512)
+            ]
+
+            up_stack = [
+                self.upsample(64*8, 3),  # (batch_size, 8, 8, 64) vs (batch_size, 16, 16, 1024)
+                self.upsample(64*4, 3),  # (batch_size, 16, 16, 64) vs (batch_size, 32, 32, 512)
+                self.upsample(64*2, 3),  # (batch_size, 32, 32, 64) vs (batch_size, 64, 64, 256)
+                self.upsample(64, 3),  # (batch_size, 64, 64, 64) vs (batch_size, 128, 128, 128)
+            ]
+        """
+        self.inputs = tf.keras.layers.Input(shape=[None, None, 1])
         # inputs = tf.keras.layers.Input(shape=[256, 256, 3])
 
-        down_stack = [
-            self.downsample(8, 3, apply_batchnorm=True),  # (batch_size, 256, 256, 3) vs (batch_size, 128, 128, 64)
-            self.downsample(16, 3),  # (batch_size, 128, 128, 64) vs (batch_size, 64, 64, 128)
-            self.downsample(32, 3),  # (batch_size, 64, 64, 128) vs (batch_size, 32, 32, 256)
-            self.downsample(64, 3),  # (batch_size, 32, 32, 256) vs (batch_size, 16, 16, 512)
-            self.downsample(64, 3),  # (batch_size, 16, 16, 512) vs (batch_size, 8, 8, 512)
+        self.down_stack = [
+            self.downsample(64),  # (batch_size, 256, 256, 3) vs (batch_size, 128, 128, 64)
+            self.downsample(64*2),  # (batch_size, 128, 128, 64) vs (batch_size, 64, 64, 128)
+            self.downsample(64*4),  # (batch_size, 64, 64, 128) vs (batch_size, 32, 32, 256)
+            self.downsample(64*8),  # (batch_size, 32, 32, 256) vs (batch_size, 16, 16, 512)
+            self.downsample(64*16),  # (batch_size, 16, 16, 512) vs (batch_size, 8, 8, 512)
         ]
 
-        up_stack = [
-            self.upsample(64, 3),  # (batch_size, 8, 8, 64) vs (batch_size, 16, 16, 1024)
-            self.upsample(32, 3),  # (batch_size, 16, 16, 64) vs (batch_size, 32, 32, 512)
-            self.upsample(16, 3),  # (batch_size, 32, 32, 64) vs (batch_size, 64, 64, 256)
-            self.upsample(8, 3),  # (batch_size, 64, 64, 64) vs (batch_size, 128, 128, 128)
+        self.up_stack = [
+            self.upsample(64*8, 3),  # (batch_size, 8, 8, 64) vs (batch_size, 16, 16, 1024)
+            self.upsample(64*4, 3),  # (batch_size, 16, 16, 64) vs (batch_size, 32, 32, 512)
+            self.upsample(64*2, 3),  # (batch_size, 32, 32, 64) vs (batch_size, 64, 64, 256)
+            self.upsample(64, 3),  # (batch_size, 64, 64, 64) vs (batch_size, 128, 128, 128)
         ]
 
         initializer = tf.random_normal_initializer(0., 0.02)
-        last = tf.keras.layers.Conv2D(6, 1,
+        self.last = tf.keras.layers.Conv2D(1, 1,
                                         strides=1,
                                         padding='same',
                                         kernel_initializer=initializer,
-                                        activation='softmax')  # (batch_size, 256, 256, 3) tanh
+                                        activation=tf.keras.activations.sigmoid)  # (batch_size, 256, 256, 3) tanh # 'softmax'
+                                        # activation=tf.keras.activations.softmax)  # (batch_size, 256, 256, 3) tanh # 'softmax'
 
-        x = inputs
-
+        x = self.inputs
         # Downsampling through the model
         skips = []
-        for down in down_stack:
+        for down in self.down_stack:
             x = down(x)
             skips.append(x)
 
         skips = reversed(skips[:-1])
 
         # Upsampling and establishing the skip connections
+        for up, skip in zip(self.up_stack, skips):
+            x = up(x)
+            x = Concatenate()([x, skip])
+
+        x = self.last(x)
+
+        return Model(inputs=self.inputs, outputs=x)
+    
+    def generator_modify(self):
+        """
+            down_stack = [
+                self.downsample(8, 3, apply_batchnorm=True),  # (batch_size, 256, 256, 3) vs (batch_size, 128, 128, 64)
+                self.downsample(16, 3),  # (batch_size, 128, 128, 64) vs (batch_size, 64, 64, 128)
+                self.downsample(32, 3),  # (batch_size, 64, 64, 128) vs (batch_size, 32, 32, 256)
+                self.downsample(64, 3),  # (batch_size, 32, 32, 256) vs (batch_size, 16, 16, 512)
+                self.downsample(64, 3),  # (batch_size, 16, 16, 512) vs (batch_size, 8, 8, 512)
+            ]
+
+            up_stack = [
+                self.upsample(64, 3),  # (batch_size, 8, 8, 64) vs (batch_size, 16, 16, 1024)
+                self.upsample(32, 3),  # (batch_size, 16, 16, 64) vs (batch_size, 32, 32, 512)
+                self.upsample(16, 3),  # (batch_size, 32, 32, 64) vs (batch_size, 64, 64, 256)
+                self.upsample(8, 3),  # (batch_size, 64, 64, 64) vs (batch_size, 128, 128, 128)
+            ]
+
+            down_stack = [
+                self.downsample(64, 3, apply_batchnorm=True),  # (batch_size, 256, 256, 3) vs (batch_size, 128, 128, 64)
+                self.downsample(64*2, 3),  # (batch_size, 128, 128, 64) vs (batch_size, 64, 64, 128)
+                self.downsample(64*4, 3),  # (batch_size, 64, 64, 128) vs (batch_size, 32, 32, 256)
+                self.downsample(64*8, 3),  # (batch_size, 32, 32, 256) vs (batch_size, 16, 16, 512)
+                self.downsample(64*16, 3),  # (batch_size, 16, 16, 512) vs (batch_size, 8, 8, 512)
+            ]
+
+            up_stack = [
+                self.upsample(64*8, 3),  # (batch_size, 8, 8, 64) vs (batch_size, 16, 16, 1024)
+                self.upsample(64*4, 3),  # (batch_size, 16, 16, 64) vs (batch_size, 32, 32, 512)
+                self.upsample(64*2, 3),  # (batch_size, 32, 32, 64) vs (batch_size, 64, 64, 256)
+                self.upsample(64, 3),  # (batch_size, 64, 64, 64) vs (batch_size, 128, 128, 128)
+            ]
+        """
+        inputs = tf.keras.layers.Input(shape=[None, None, 1])
+        # inputs = tf.keras.layers.Input(shape=[256, 256, 3])
+
+        down_stack = [
+            self.downsample_modify(64),  # (batch_size, 256, 256, 3) vs (batch_size, 128, 128, 64)
+            self.downsample_modify(64*2),  # (batch_size, 128, 128, 64) vs (batch_size, 64, 64, 128)
+            self.downsample_modify(64*4),  # (batch_size, 64, 64, 128) vs (batch_size, 32, 32, 256)
+            self.downsample_modify(64*8),  # (batch_size, 32, 32, 256) vs (batch_size, 16, 16, 512)
+            self.downsample_modify(64*16),  # (batch_size, 16, 16, 512) vs (batch_size, 8, 8, 512)
+        ]
+
+        up_stack = [
+            self.upsample(64*8, 3),  # (batch_size, 8, 8, 64) vs (batch_size, 16, 16, 1024)
+            self.upsample(64*4, 3),  # (batch_size, 16, 16, 64) vs (batch_size, 32, 32, 512)
+            self.upsample(64*2, 3),  # (batch_size, 32, 32, 64) vs (batch_size, 64, 64, 256)
+            self.upsample(64, 3),  # (batch_size, 64, 64, 64) vs (batch_size, 128, 128, 128)
+        ]
+
+        initializer = tf.random_normal_initializer(0., 0.02)
+        last = tf.keras.layers.Conv2D(1, 1,
+                                        strides=1,
+                                        padding='same',
+                                        kernel_initializer=initializer,
+                                        activation=tf.keras.activations.softmax, 
+                                        name = "last_layer")  # (batch_size, 256, 256, 3) tanh # 'softmax'
+
+        x = inputs
+        # Downsampling through the model
+        skips = []
+        for down in down_stack:
+            f, x = down(x)
+            skips.append(f)
+
+        skips = reversed(skips[:-1])
+
+        # Upsampling and establishing the skip connections
         for up, skip in zip(up_stack, skips):
             x = up(x)
-            x = tf.keras.layers.Concatenate()([x, skip])
+            x = Concatenate()([x, skip])
 
         x = last(x)
 
         return tf.keras.Model(inputs=inputs, outputs=x)
-    
-    def loss_generador(self, disc_generated_output, gen_output, target):
-        gan_loss = self.loss(tf.ones_like(disc_generated_output), disc_generated_output)
-        # Mean absolute error
-        l1_loss = tf.reduce_mean(tf.abs(target - gen_output))
-        
-        total_gen_loss = gan_loss + (self.LAMBDA * l1_loss)
-
-        return total_gen_loss, gan_loss, l1_loss
 
 def __main__():
     pass

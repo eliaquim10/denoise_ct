@@ -11,14 +11,30 @@ class Trainer:
         self.now = None
         self.loss = loss
         self.checkpoint = tf.train.Checkpoint(step=tf.Variable(0),
-                                              psnr=tf.Variable(-1.0),
+                                              bc=tf.Variable(10.0),
                                               optimizer=Adam(learning_rate),
                                               model=model)
         self.checkpoint_manager = tf.train.CheckpointManager(checkpoint=self.checkpoint,
                                                              directory=checkpoint_dir,
                                                              max_to_keep=3)
+        
+        self.batch_writer = None
+        self.train_writer = None
 
         self.restore()
+    
+        # self.batch_writer = tf.summary.create_file_writer(batch_train_log_dir)
+        # self.train_writer = tf.summary.create_file_writer(train_log_dir)
+        
+    def batch_train_summary_writer(self):
+        if not self.batch_writer:
+            self.batch_writer = tf.summary.create_file_writer(batch_train_log_dir)
+        return self.batch_writer
+
+    def train_summary_writer(self):
+        if not self.train_writer:
+            self.train_writer = tf.summary.create_file_writer(train_log_dir)
+        return self.train_writer
 
     @property
     def model(self):
@@ -39,9 +55,12 @@ class Trainer:
             print(f'{step}/{steps}')
             # ckpt.step = step
 
-            for entrada, target in train_dataset():
+            for i, (entrada, target) in enumerate(train_dataset()):
                 with tf.device("/GPU:0"):
                     loss = self.train_step(entrada, target)
+
+                    with self.batch_train_summary_writer().as_default():
+                        tf.summary.scalar('LOSS_FILE', loss, step=i)
                     loss_mean(loss)
 
             if step % evaluate_every == 0:
@@ -50,29 +69,26 @@ class Trainer:
 
                 # Compute PSNR on validation dataset
 
-                with tf.device("/GPU:0"):
-                    mse_value, rmse_value, mae_value = self.evaluate(valid_dataset())
+                # with tf.device("/GPU:0"):
+                bc_value = self.evaluate(valid_dataset())
                 
                 # mae_value = self.evaluate_mae(valid_dataset())
 
-                with train_summary_writer.as_default():
+                with self.train_summary_writer().as_default():
                     # tf.summary.scalar('LOSS', loss, step=step)
                     tf.summary.scalar('LOSS', loss_value, step=step)
-                    tf.summary.scalar('MAE', mae_value, step=step)
-                    tf.summary.scalar('MSE', mse_value, step=step)
-                    tf.summary.scalar('RMSE', rmse_value, step=step)
+                    tf.summary.scalar('BC', bc_value, step=step)
 
                 duration = time.perf_counter() - self.now
-                print(f'{step}/{steps}: LOSS = {loss_value.numpy():.4f}, MSE = {mse_value.numpy():.4f}, RMSE = {mse_value.numpy():.4f}, MAE = {mae_value.numpy():4f} ({duration:.2f}s)')
+                print(f'{step}/{steps}: LOSS = {loss_value.numpy():.4f}, BC = {bc_value.numpy():.4f} ({duration:.2f}s)')
                 
-                if save_best_only and mae_value >= ckpt.mae:
+                if save_best_only and bc_value >= ckpt.bc:
                 # if save_best_only and psnr_value <= ckpt.psnr:
                     self.now = time.perf_counter()
                     # skip saving checkpoint, no PSNR improvement
                     continue
 
-                ckpt.mse = mse_value
-                ckpt.mae = mae_value
+                ckpt.bc = bc_value
                 ckpt_mgr.save()
 
                 self.now = time.perf_counter()
@@ -86,6 +102,10 @@ class Trainer:
 
             saida = self.checkpoint.model(entrada, training=True)
             loss_value = self.loss(target, saida)
+
+        # if loss_value == np.nan:
+        #     print("is nan")
+        #     return loss_value
 
         gradients = tape.gradient(loss_value, self.checkpoint.model.trainable_variables)
         self.checkpoint.optimizer.apply_gradients(zip(gradients, self.checkpoint.model.trainable_variables))
@@ -102,7 +122,7 @@ class Trainer:
         if self.checkpoint_manager.latest_checkpoint:
             self.checkpoint.restore(self.checkpoint_manager.latest_checkpoint)
             print(f'Model restored from checkpoint at step {self.checkpoint.step.numpy()}.')
-            
+"""            
 class GanTrainer:
     #
     # TODO: model and optimizer checkpoints
@@ -199,7 +219,7 @@ class GanTrainer:
         target_loss = self.binary_cross_entropy(tf.ones_like(target_out), target_out)
         saida_loss = self.binary_cross_entropy(tf.zeros_like(saida_out), saida_out)
         return target_loss + saida_loss
-
+"""
 class GeneratorTrainer(Trainer):
     def __init__(self,
                  model,

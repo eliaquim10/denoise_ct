@@ -6,12 +6,14 @@ training = True
 gan_training = False
 Loader_RGB_MEAN = np.array([0.4488, 0.4371, 0.4040]) * 255
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-train_log_dir = 'logs/gradient_tape/' + current_time + '/train'
-test_log_dir = 'logs/gradient_tape/' + current_time + '/test'
-train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+log_dir = 'logs/gradient_tape/' + current_time + "/"
+batch_train_log_dir = 'logs/gradient_tape/batch/' + current_time + ""
+train_log_dir = log_dir + 'train'
+test_log_dir = log_dir + 'test'
+# batch_train_summary_writer = tf.summary.create_file_writer(batch_train_log_dir)
+# train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+metric_bc = BinaryCrossentropy()
 metric_mae = MeanAbsoluteError()
-metric_mse = MeanSquaredError()
-metric_rmse = RootMeanSquaredError()
 
 def __main__():
     pass

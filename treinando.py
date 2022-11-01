@@ -40,39 +40,47 @@ valid = data_loader_valid.get_elements
 
 unet = Gerador_UNet()
 
-generator = unet.generator()
+# generator = unet.generator()
+generator = unet.generator_modify() # _modify
+
 
 # generator.load_weights(weights_file('pre_generator.h5'))
 trainer = GeneratorTrainer(model=generator, 
-                loss = SparseCategoricalCrossentropy(),                                                                                                                              
-                checkpoint_dir='.ckpt/seg_pre_generator1')
+                # loss = SparseCategoricalCrossentropy(),                                                                                                                              
+                # loss = CategoricalCrossentropy(),                                                                                                                              
+                loss = BinaryCrossentropy(),                                                                                                                              
+                checkpoint_dir='.ckpt/seg_pre_generator1', #from_logits = True
+                # learning_rate=1e-3
+                learning_rate=PiecewiseConstantDecay(boundaries=[1, 45, 50], values=[1e-2, 1e-5, 1e-7, 1e-7])  #, 1e-6
+                )
 trainer.train(train,
                 valid,
                 # steps=1000000, 
-                steps=100,
+                steps=3,
                 # evaluate_every=10000, 
-                evaluate_every=10, 
+                evaluate_every=1, 
                 save_best_only=False)
 
+print("salvando o modelo")
 trainer.model.save_weights(weights_file(args.weights, 'pre_generator.h5'))
 
-def resolve_and_plot(noise_image_path):
-    noise, original = noiser_np(noise_image_path)
+# def resolve_and_plot(noise_image_path):
+#     noise, original = noiser_np(noise_image_path)
     
-    gan_sr = resolve_single(generator, noise)
+#     gan_sr = resolve_single(generator, noise)
     
-    plt.figure(figsize=(20, 20))
+#     plt.figure(figsize=(20, 20))
     
-    images = [noise, original, gan_sr]
-    titles = ['noiser', "original",  'denoiser (GAN)']
-    positions = [1, 2, 3]
+#     images = [noise, original, gan_sr]
+#     titles = ['noiser', "original",  'denoiser (GAN)']
+#     positions = [1, 2, 3]
     
-    for i, (img, title, pos) in enumerate(zip(images, titles, positions)):
-        plt.subplot(2, 2, pos)
-        plt.imshow(img)
-        plt.title(title)
-        plt.xticks([])
-        plt.yticks([])
+#     for i, (img, title, pos) in enumerate(zip(images, titles, positions)):
+#         plt.subplot(2, 2, pos)
+#         plt.imshow(img)
+#         plt.title(title)
+#         plt.xticks([])
+#         plt.yticks([])
 
 
 # resolve_and_plot('/opt/notebooks/dataset/Projeto/LR/4.png')

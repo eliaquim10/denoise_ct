@@ -1,6 +1,6 @@
 from time import sleep
 from tensorflow.keras.models import Model
-from tensorflow.keras.applications.vgg19 import VGG19
+# from tensorflow.keras.applications.vgg19 import VGG19
 from .variaveis import *
 import nibabel as nib
 
@@ -45,7 +45,7 @@ def psnr(x1, x2):
     # x2 = tf.cast(x2, tf.uint8)
 
     return tf.image.psnr(x1, x2, max_val=255) #, max_val=255
-
+    
 # %% [markdown]
 # #### Transformacões
 
@@ -68,9 +68,8 @@ def load(entrada, saida):
 def load_lazy(entrada):
     try:
         file_entrada = nib.load(entrada).get_fdata()
-        file_entrada = file_entrada.transpose((2, 0, 1))# np.array(, dtype=np.float32)
-
-        return file_entrada
+        # file_entrada = 1 - file_entrada
+        return file_entrada.transpose((2, 0, 1))# np.array(, dtype=np.float32)
         # return file_entrada.transpose((2, 0, 1)
     except:
         print("="*100)
@@ -106,17 +105,18 @@ def load_image(path):
 # @tf.function()
 def input_nib_l(filename, slice):
     img = nib.load(filename).get_fdata()
-    print(img.shape)
-    # img = img.slicer[:,:,slice]
+    img = img[:,:,slice]
+    
     img = tf.cast(img, tf.float32)
-    return img[:,:,slice]
+    return img
 
 def input_nib_v(filename, slice):
     img = nib.load(filename).get_fdata()
+    img = img[:,:,slice]
 
     img = tf.cast(img, tf.float32)
-    img = tf.clip_by_value(img, 0.0, 1.0)
-    return img[:,:,slice]
+    # img = tf.clip_by_value(img, 0.0, 1.0)
+    return img
 
 def input_nib_(img):
     img = tf.clip_by_value(img, -3024.0 , 1410.0)
@@ -126,9 +126,10 @@ def input_nib_(img):
 @tf.function()
 def clip(x, y):
     x = tf.clip_by_value(x, 0., 1.)
+    # y = tf.clip_by_value(y, 0., 1.)
 
-    # return x, y 
-    return x, y
+    return x, y 
+    # return tf.cast(x, dtype=tf.float32), tf.cast(y, dtype=tf.float32)
     # return tf.cast(x, dtype=tf.float16), tf.sparse.from_dense(y) 
 
 @tf.function()
@@ -181,6 +182,26 @@ def one_hot(target):
     return target[:,:,1:]
 
 @tf.function()
+def slice_lung(target):
+    """
+        0: Background (None of the following organs)
+        1: Liver (figado)
+        2: Bladder (bexiga)
+        3: Lungs (pulmao)
+        4: Kidneys (rins)
+        5: Bone (osso)
+        6: Brain (cerebro)
+    """
+    indices = [0, 1, 2, 3, 4, 5, 6]
+    
+    target = tf.round(target)
+    target = tf.cast(target, dtype=tf.uint8)
+    target = tf.one_hot(target, len(indices), dtype=tf.float32)
+    # remove o blackground
+    target = target[:,:,3:4]
+    return target
+
+@tf.function()
 def expand_dims(input):
     return tf.expand_dims(input, axis=2)
 
@@ -192,7 +213,7 @@ def resolve(model, input_batch):
     input_batch = tf.cast(input_batch, tf.float32)
     target_batch = model(input_batch)
     # target_batch = tf.clip_by_value(target_batch, 0, 255)
-    target_batch = tf.round(target_batch)
+    # target_batch = tf.round(target_batch)
     # target_batch = tf.cast(target_batch, tf.uint8)
     return target_batch
 
@@ -211,22 +232,22 @@ def resolve_mae(model, input_batch):
 
 # @tf.function()
 def evaluate(model, dataset):
-    rmse_values = []
-    mse_values = []
-    mae_values = []
+    # rmse_values = []
+    # mse_values = []
+    # mae_values = []
+    bc_mean = Mean()
+
     for input, target in dataset:
-        seg = resolve(model, input)
+        with tf.device("/device:gpu:0"):
+            seg = resolve(model, input)
         # one_target = one_hot(target)
-        metric_mae.update_state(target, seg) # mae_value = 
-        metric_mse.update_state(target, seg) # mse_value = 
-        metric_rmse.update_state(target, seg) # rmse_value = 
-        
-        mae_values.append(metric_mae.result())
-        mse_values.append(metric_mse.result())
-        rmse_values.append(metric_rmse.result())
+        bc_value = metric_bc(target, seg) # mae_value = 
+
+        bc_mean(bc_value)
     # sleep(0.01)
-    
-    return tf.reduce_mean(mse_values), tf.reduce_mean(rmse_values), tf.reduce_mean(mae_values)
+    bc = bc_mean.result()
+
+    return bc
 
 def evaluate_mae(model, dataset):
     mae_values = []
@@ -246,6 +267,7 @@ def weights_file(dir_file, filename):
     return os.path.join(weights_dir, filename)
 # os.makedirs(weights_dir, exist_ok=True)
 
+@tf.function()
 def resolve_single(model, target):
     return resolve(model, tf.expand_dims(target, axis=0))[0]
     
@@ -266,17 +288,17 @@ def plot_sample(target, sr):
         plt.xticks([])
         plt.yticks([])
 
-def vgg_22():
-    return _vgg(5)
+# def vgg_22():
+#     return _vgg(5)
 
 
-def vgg_54():
-    return _vgg(20)
+# def vgg_54():
+#     return _vgg(20)
 
 
-def _vgg(output_layer):
-    vgg = VGG19(input_shape=(None, None, 3), include_top=False)
-    return Model(vgg.input, vgg.layers[output_layer].output)
+# def _vgg(output_layer):
+#     vgg = VGG19(input_shape=(None, None, 3), include_top=False)
+#     return Model(vgg.input, vgg.layers[output_layer].output)
 
 def __main__():
     pass
