@@ -1,0 +1,12 @@
+bce_60
+unet
+loss = BinaryCrossentropy()                                                                                                               
+learning_rate=4e-3
+epocas = 60
+
+
+dice_60
+unet
+loss = DiceLoss()                                                                                                               
+learning_rate=4e-3
+epocas = 60

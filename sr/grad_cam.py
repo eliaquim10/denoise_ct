@@ -49,10 +49,12 @@ class GradCAM:
             inputs = tf.cast(image, tf.float32)
             (convOutputs, predictions) = gradModel(inputs)
             
+            print("shape", predictions.shape)
             loss = predictions[:, self.classIdx]
+            print("shape", loss.shape)
     
         # use automatic differentiation to compute the gradients
-        grads = tape.gradient(loss, convOutputs)
+        grads = tape.gradient(loss, convOutputs)[0]
 
         print("convOutputs", convOutputs.shape)
         print("guidedGrads", grads.shape)
@@ -72,12 +74,17 @@ class GradCAM:
         # as weights, compute the ponderation of the filters with
         # respect to the weights
         # if castGrads.numpy() > 0:
-        #     weights = tf.reduce_mean(guidedGrads, axis=(0,1))
+        weights = tf.reduce_mean(guidedGrads, axis=(0, 1, 2))
         # else:
-        weights = self.model.get_layer("last_layer").weights[0][0,0,-1,0]
-        # print(weights)
+        # weights = self.model.get_layer("last_layer").weights[0][0,0,-1,0]
+        # weights = self.model.get_layer("last_layer").weights[0]
+        # print("weights", weights.shape)
         # cam = weights @ convOutputs
+        # cam = tf.reduce_sum(tf.multiply(weights, convOutputs), axis=-1)
+        # tf.reduce
         cam = tf.reduce_sum(tf.multiply(weights, convOutputs), axis=-1)
+        # cam = tf.reduce_sum(cam, axis=-1)
+        print("cam", cam.shape)
         
         # grab the spatial dimensions of the input image and resize
         # the output class activation map to match the input image
@@ -93,8 +100,57 @@ class GradCAM:
         heatmap = numer / denom
         heatmap = (heatmap * 255).astype("uint8")
         # return the resulting heatmap to the calling function
-        return heatmap
+        
+        return np.expand_dims(heatmap, 2)
 
+    def compute_heatmap_unet(self, image, eps=1e-8, alpha=0.5):
+        # construct our gradient model by supplying (1) the inputs
+        # to our pre-trained model, (2) the output of the (presumably)
+        # final 4D layer in the network, and (3) the output of the
+        # softmax activations from the model
+        # image = tf.expand_dims(image, axis=2)
+        image = tf.expand_dims(image, axis=0)
+        print(self.model.summary())
+        gradModel = Model(
+            inputs=[self.model.inputs],
+            outputs=[self.model.get_layer(self.layerName).output, self.model.output])
+
+        # record operations for automatic differentiation
+        with tf.GradientTape() as tape:
+            # cast the image tensor to a float-32 data type, pass the
+            # image through the gradient model, and grab the loss
+            # associated with the specific class index
+            inputs = tf.cast(image, tf.float32)
+            (convOutputs, predictions) = gradModel(inputs)
+            
+            print("shape", predictions.shape)
+            # loss = predictions[:,:, self.classIdx]
+    
+        # use automatic differentiation to compute the gradients
+        # grads = tape.gradient(loss, convOutputs)[0]
+
+        print("convOutputs", convOutputs.shape)
+        # print("guidedGrads", grads.shape)
+
+        # compute the guided gradients
+        for i in range(predictions.shape[-1]):
+            predictions[:, :, i] *= convOutputs[i]
+
+        heatmap = np.mean(predictions, axis=-1)
+        
+        print("heatmap_shape = ", heatmap.shape)
+        heatmap = np.maximum(heatmap, 0)
+        heatmap /= np.max(heatmap)
+        
+        heatmap = cv2.resize(heatmap, (image.shape[1], image.shape[0]))
+        heatmap = np.uint8(255 * heatmap)
+
+        superimposed_img = heatmap * alpha + image
+
+        
+        # return the resulting heatmap to the calling function
+        
+        return heatmap, superimposed_img
     def make_gradcam_heatmap(self, img, pred_index=None):
         # First, we create a model that maps the input image to the activations
         # of the last conv layer as well as the output predictions
@@ -109,7 +165,7 @@ class GradCAM:
         with tf.GradientTape() as tape:
             last_conv_layer_output, preds = grad_model(data)
             if pred_index is None:
-                pred_index = tf.argmax(preds[0])
+                pred_index = tf.argmax(preds[0], 2)
             class_channel = preds[:, self.classIdx]
 
         # This is the gradient of the output neuron (top predicted or chosen)
@@ -118,7 +174,7 @@ class GradCAM:
 
         # This is a vector where each entry is the mean intensity of the gradient
         # over a specific feature map channel
-        pooled_grads = tf.reduce_mean(grads, axis=(0, 1))
+        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
         # print(pooled_grads)
 
         # We multiply each channel in the feature map array
@@ -126,10 +182,11 @@ class GradCAM:
         # then sum all the channels to obtain the heatmap class activation
         last_conv_layer_output = last_conv_layer_output[0]
         heatmap = last_conv_layer_output @ pooled_grads[..., tf.newaxis]
-        heatmap = tf.squeeze(heatmap)
+        # print("make_heatmap", heatmap.shape)
+        # heatmap = tf.squeeze(heatmap)
 
         # For visualization purpose, we will also normalize the heatmap between 0 & 1
-        heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
+        # heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
         return heatmap.numpy()
 
     def overlay_heatmap(self, heatmap, image, alpha=0.5,
@@ -141,12 +198,12 @@ class GradCAM:
         # image = np.clip(image, 0, 255)
         # image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
-        print("image", image.shape)
-        print("heatmap", heatmap.shape)
-        output = cv2.addWeighted(image, alpha, heatmap, 1 - alpha, 0)
-        heatmap = np.clip(heatmap, 0, 255)
+        output = image + (heatmap * alpha)
+        # output = cv2.addWeighted(image, alpha, heatmap, 1 - alpha, 0)
+        # heatmap = np.clip(heatmap, 0, 255)
+        heatmap = self.array_img(heatmap)
         heatmap = cv2.applyColorMap(heatmap, colormap)
-        # output = image + (heatmap * alpha)
+        output = self.array_img(output)
         # return a 2-tuple of the color mapped heatmap and the output,
         # overlaid image
         return (heatmap, output)
@@ -154,13 +211,14 @@ class GradCAM:
     def display_gradcam(self, heatmap, image, alpha=0.4):
         # Load the original image
         image = tf.expand_dims(image, 2)
-        image = tf.clip_by_value(image,0,255)
+        # image = tf.clip_by_value(image,0,255)
 
         image = cv2.cvtColor(image.numpy(), cv2.COLOR_GRAY2RGB)
 
         # image = keras.preprocessing.image.array_to_img(image)
         # Rescale heatmap to a range 0-255
-        np.clip(heatmap, 0, 255, heatmap)
+        # np.clip(heatmap, 0, 255, heatmap)
+        
         # heatmap = np.uint8(255 * heatmap)
 
         # Use jet colormap to colorize heatmap
@@ -181,7 +239,10 @@ class GradCAM:
         # Superimpose the heatmap on original image
         # print("jet_heatmap", jet_heatmap.shape, image.shape)
         superimposed_img = jet_heatmap * alpha + image
-        superimposed_img = tf.clip_by_value(superimposed_img,0,255)
+        # superimposed_img = tf.clip_by_value(superimposed_img,0,255)
+        
+        # superimposed_img = self.array_img(superimposed_img)
+
         # np.clip(superimposed_img, 0, 255, superimposed_img)
         # superimposed_img = cv2.cvtColor(superimposed_img.numpy(), cv2.COLOR_GRAY2RGB)
 
@@ -189,6 +250,13 @@ class GradCAM:
 
         # Save the superimposed image
         return jet_heatmap, superimposed_img
+    
+    def array_img(self, image):
+        # image = tf.clip_by_value(image,0,255)
+        image = (image*255).astype("uint8")
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        return image
+
 
     def resize(self, heatmap, entrada):
         return cv2.resize(heatmap, (entrada.shape[1], entrada.shape[0]))

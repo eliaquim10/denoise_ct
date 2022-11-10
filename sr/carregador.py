@@ -7,6 +7,7 @@ size = 50
 class Loader:
     def __init__(self,
                  size=50,
+                 channel_img = False,
                  repeat = None,
                  batch_size = 8,
                  load_type = "nii.gz",
@@ -21,6 +22,7 @@ class Loader:
         self.batch_size = batch_size
         # self.repeat = repeat
         self.size = size
+        self.channel_img = channel_img
         self.percent = percent
         self.load_type = load_type
         self.shuffle = 1000
@@ -124,6 +126,9 @@ class Loader:
         ds = ds.map(lambda entrada, target: self.random_crop(entrada, target), num_parallel_calls=AUTOTUNE)
         
         ds = ds.filter(lambda _, target: tf.reduce_sum(target) > 3000)
+        if self.channel_img:
+            ds = ds.map(lambda x, y: (tf.concat([x, x, x]), y), num_parallel_calls=AUTOTUNE)
+
 
         if random_transform:
             ds = ds.map(random_rotate, num_parallel_calls=AUTOTUNE)

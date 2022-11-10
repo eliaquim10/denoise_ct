@@ -6,6 +6,8 @@ from sr import *
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--size", nargs="?", type=int, default=5)
+parser.add_argument("--unet", nargs="?", type=int, default=0)
+parser.add_argument("--loss", nargs="?", type=int, default=0)
 parser.add_argument("--batch_size", nargs="?", type=int, default=2)
 parser.add_argument("--load_type", nargs="?", type=str, default="npy") #nii.gz
 parser.add_argument("--images_dir", nargs="?", type=str, default="/opt/notebooks/denoise_ct/dataset/v1")
@@ -13,8 +15,23 @@ parser.add_argument("--caches_dir", nargs="?", type=str, default="/opt/notebooks
 parser.add_argument("--weights", nargs="?", type=str, default="")
 
 args = parser.parse_args()
+model_name = "unet" if args.unet else "fcn32"
+print("model_name", model_name)
+losses = [
+    BinaryCrossentropy(),
+    CategoricalCrossentropy(),                                                                                                                              
+    DiceLoss(2)
+]
+unet = Gerador_UNet()
+models = [
+    FCN32(2),
+    unet.generator_modify(),
+]
+generator = models[args.unet]
+loss = losses[args.loss]
 
-data_loader_train = Loader(size=args.size, 
+data_loader_train = Loader(size=args.size,
+                channel_img = bool(1 - args.unet),
                 batch_size = args.batch_size,
                 load_type = args.load_type,
                 subset='train', 
@@ -27,6 +44,7 @@ train = data_loader_train.get_elements
 
 
 data_loader_valid = Loader(size=args.size, 
+                channel_img = bool(1 - args.unet),
                 batch_size = args.batch_size,
                 load_type = args.load_type,
                 subset='valid', 
@@ -38,31 +56,32 @@ valid = data_loader_valid.get_elements
 # valid = data_loader_valid.dataset(1, random_transform=True, repeat_count=1)
 
 
-unet = Gerador_UNet()
 
 # generator = unet.generator()
-generator = unet.generator_modify() # _modify
+# if (args.unet):
+#     unet = Gerador_UNet()
+#     generator = unet.generator_modify() # _modify
+# else:
+#     generator = FCN32(2)
 
 
 # generator.load_weights(weights_file('pre_generator.h5'))
-trainer = GeneratorTrainer(model=generator, 
-                # loss = SparseCategoricalCrossentropy(),                                                                                                                              
-                # loss = CategoricalCrossentropy(),                                                                                                                              
-                loss = BinaryCrossentropy(),                                                                                                                              
-                checkpoint_dir='.ckpt/seg_pre_generator1', #from_logits = True
+trainer = GeneratorTrainer(model=generator,                                                                                                                   
+                loss = loss,                                                                                                                              
+                checkpoint_dir=f'.ckpt/seg_pre_generator_{model_name}', #from_logits = True
                 # learning_rate=1e-3
-                learning_rate=PiecewiseConstantDecay(boundaries=[1, 45, 50], values=[1e-2, 1e-5, 1e-7, 1e-7])  #, 1e-6
+                learning_rate=PiecewiseConstantDecay(boundaries=[1, 450, 500], values=[1e-15, 1e-5, 1e-7, 1e-7])  #, 1e-6
                 )
 trainer.train(train,
                 valid,
                 # steps=1000000, 
-                steps=3,
+                steps=25,
                 # evaluate_every=10000, 
                 evaluate_every=1, 
                 save_best_only=False)
 
 print("salvando o modelo")
-trainer.model.save_weights(weights_file(args.weights, 'pre_generator.h5'))
+trainer.model.save_weights(weights_file(args.weights, f'{model_name}_pre_generator.h5'))
 
 # def resolve_and_plot(noise_image_path):
 #     noise, original = noiser_np(noise_image_path)

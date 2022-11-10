@@ -1,4 +1,4 @@
-bash -i
+# bash -i
 # conda activate seg
 pip install IProgress
 pip install cython pyyaml==5.1
@@ -7,7 +7,8 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/
 pip install matplotlib
 pip install nibabel
 python -m pip install tensorflow
-
+pip install tqdm
+pip install opencv-python
 
 
 # loss sendo calculada mas náo esta conseguindo calcular as metricas para avaliacäo 

@@ -182,6 +182,12 @@ def one_hot(target):
     return target[:,:,1:]
 
 @tf.function()
+def one_hot_lung(target):
+    target = tf.squeeze(target)
+    target = tf.one_hot(target, 2, dtype=tf.float32)
+    return target 
+
+@tf.function()
 def slice_lung(target):
     """
         0: Background (None of the following organs)
@@ -193,13 +199,15 @@ def slice_lung(target):
         6: Brain (cerebro)
     """
     indices = [0, 1, 2, 3, 4, 5, 6]
-    
+
     target = tf.round(target)
     target = tf.cast(target, dtype=tf.uint8)
-    target = tf.one_hot(target, len(indices), dtype=tf.float32)
+    target = tf.one_hot(target, len(indices), dtype=tf.uint8)
     # remove o blackground
     target = target[:,:,3:4]
     return target
+
+
 
 @tf.function()
 def expand_dims(input):
@@ -275,18 +283,20 @@ def resolve_single(model, target):
 #     return np.array(Image.open(path))
 
 
-def plot_sample(target, sr):
-    plt.figure(figsize=(20, 10))
-
-    images = [target, sr]
-    titles = ['target', f'SR (x{sr.shape[0] // target.shape[0]})']
-
-    for i, (img, title) in enumerate(zip(images, titles)):
-        plt.subplot(1, 2, i+1)
-        plt.imshow(img)
+def plot_sample(lista):
+    plt.figure(figsize=(16, 16))
+    tamanho = len(lista)
+    print("tamanho=", tamanho)
+    
+    for i, (img, title, pos) in enumerate(lista):
+        # print(title, img[0,0])
+        plt.subplot(tamanho // 2 + 2, 2, pos)
+        plt.imshow(img) # , cmap='gray'
         plt.title(title)
         plt.xticks([])
         plt.yticks([])
+
+    plt.show()
 
 # def vgg_22():
 #     return _vgg(5)
