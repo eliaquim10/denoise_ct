@@ -123,9 +123,11 @@ class Loader:
         # slice_lung
         # ds = ds.map(lambda entrada, target: (expand_dims(entrada), one_hot(target)) , num_parallel_calls=AUTOTUNE)
         ds = ds.map(lambda entrada, target: (expand_dims(entrada), slice_lung(target)) , num_parallel_calls=AUTOTUNE)
+        ds = ds.filter(lambda _, target: tf.reduce_sum(target) > 6000)
+
         ds = ds.map(lambda entrada, target: self.random_crop(entrada, target), num_parallel_calls=AUTOTUNE)
+        ds = ds.map(lambda entrada, target: (entrada, one_hot_lung(target)), num_parallel_calls=AUTOTUNE)
         
-        ds = ds.filter(lambda _, target: tf.reduce_sum(target) > 3000)
         if self.channel_img:
             ds = ds.map(lambda x, y: (tf.concat([x, x, x]), y), num_parallel_calls=AUTOTUNE)
 

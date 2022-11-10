@@ -71,12 +71,12 @@ trainer = GeneratorTrainer(model=generator,
                 loss = loss,                                                                                                                              
                 checkpoint_dir=f'.ckpt/seg_pre_generator_{model_name}', #from_logits = True
                 # learning_rate=1e-3
-                learning_rate=PiecewiseConstantDecay(boundaries=[1, 450, 500], values=[1e-15, 1e-5, 1e-7, 1e-7])  #, 1e-6
+                learning_rate=PiecewiseConstantDecay(boundaries=[1, 450, 500], values=[1e-5, 1e-5, 1e-7, 1e-7])  #, 1e-6
                 )
 trainer.train(train,
                 valid,
                 # steps=1000000, 
-                steps=25,
+                steps=10,
                 # evaluate_every=10000, 
                 evaluate_every=1, 
                 save_best_only=False)

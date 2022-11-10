@@ -44,27 +44,38 @@ def sr_resnet(num_filters=64, num_res_blocks=16):
 
 # generator = sr_resnet
 
-vgg19 = tf.keras.applications.VGG19(include_top=False,
-                                                weights='imagenet',
-                                                input_shape=(None,None,3))
+# vgg19 = tf.keras.applications.VGG19(include_top=False,
+#                                                 weights='imagenet',
+#                                                 input_shape=(None,None,3))
 
-# vgg19.summary()
+# # vgg19.summary()
 
-feature_extractor = tf.keras.models.Model(inputs=vgg19.input,
-                                          outputs=[vgg19.get_layer('block1_pool').output,
-                                                   vgg19.get_layer('block2_pool').output,
-                                                   vgg19.get_layer('block3_pool').output,
-                                                   vgg19.get_layer('block4_pool').output,
-                                                   vgg19.get_layer('block5_pool').output])
+# feature_extractor = tf.keras.models.Model(inputs=vgg19.input,
+#                                           outputs=[vgg19.get_layer('block1_pool').output,
+#                                                    vgg19.get_layer('block2_pool').output,
+#                                                    vgg19.get_layer('block3_pool').output,
+#                                                    vgg19.get_layer('block4_pool').output,
+#                                                    vgg19.get_layer('block5_pool').output])
 class FCN32(tf.keras.models.Model):
     
     def __init__(self, n_classes):
         super(FCN32, self).__init__()
+        self.vgg19 = self.vgg_19()
         self.n_classes = n_classes
-        self.feature_extractor = feature_extractor 
+        self.feature_extractor = tf.keras.models.Model(
+            inputs=self.vgg19.input,
+            outputs=[self.vgg19.get_layer('block1_pool').output,
+                    self.vgg19.get_layer('block2_pool').output,
+                    self.vgg19.get_layer('block3_pool').output,
+                    self.vgg19.get_layer('block4_pool').output,
+                    self.vgg19.get_layer('block5_pool').output])
+ 
         self.convT = tf.keras.layers.Conv2DTranspose(filters=self.n_classes, kernel_size=(32, 32), use_bias=False, strides=(32,32), padding='same')
         self.final = tf.keras.layers.Conv2D(filters=self.n_classes, kernel_size=(8,8), activation='softmax', padding='same')
-
+    def vgg_19(self):
+        return tf.keras.applications.VGG19(include_top=False,
+                                                weights='imagenet',
+                                                input_shape=(None,None,3))
     def compute_output_shape(self, input_shape):
         self.inputShape = input_shape
         return (input_shape[0],input_shape[1],input_shape[2], self.n_classes)
