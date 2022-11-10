@@ -6,6 +6,7 @@ from .gerador import *
 from .treinador import *
 from .opt import *
 from .utils import *
+from .perda import *
 
 if (0!=0):
     from visualizacao import *

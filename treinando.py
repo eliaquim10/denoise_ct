@@ -20,7 +20,8 @@ print("model_name", model_name)
 losses = [
     BinaryCrossentropy(),
     CategoricalCrossentropy(),                                                                                                                              
-    DiceLoss(2)
+    DiceLoss(2), 
+    FocalLoss(),
 ]
 unet = Gerador_UNet()
 models = [
