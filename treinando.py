@@ -20,12 +20,12 @@ print("model_name", model_name)
 losses = [
     BinaryCrossentropy(),
     CategoricalCrossentropy(),                                                                                                                              
-    DiceLoss(2), 
+    DiceLoss(), 
     FocalLoss(),
 ]
 unet = Gerador_UNet()
 models = [
-    FCN32(2),
+    FCN32(),
     unet.generator_modify(),
 ]
 generator = models[args.unet]

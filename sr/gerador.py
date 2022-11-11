@@ -58,31 +58,42 @@ def sr_resnet(num_filters=64, num_res_blocks=16):
 #                                                    vgg19.get_layer('block5_pool').output])
 class FCN32(tf.keras.models.Model):
     
-    def __init__(self, n_classes):
+    def __init__(self, n_classes=2):
         super(FCN32, self).__init__()
         self.vgg19 = self.vgg_19()
         self.n_classes = n_classes
-        self.feature_extractor = tf.keras.models.Model(
-            inputs=self.vgg19.input,
-            outputs=[self.vgg19.get_layer('block1_pool').output,
-                    self.vgg19.get_layer('block2_pool').output,
-                    self.vgg19.get_layer('block3_pool').output,
-                    self.vgg19.get_layer('block4_pool').output,
-                    self.vgg19.get_layer('block5_pool').output])
+        self.feature_extractor = None
+        self.vgg19 = None
  
         self.convT = tf.keras.layers.Conv2DTranspose(filters=self.n_classes, kernel_size=(32, 32), use_bias=False, strides=(32,32), padding='same')
         self.final = tf.keras.layers.Conv2D(filters=self.n_classes, kernel_size=(8,8), activation='softmax', padding='same')
-    def vgg_19(self):
-        return tf.keras.applications.VGG19(include_top=False,
+    def get_vgg19(self):
+        if self.vgg19 == None:
+            self.vgg19 = tf.keras.applications.VGG19(include_top=False,
                                                 weights='imagenet',
                                                 input_shape=(None,None,3))
+        return self.vgg19
+
     def compute_output_shape(self, input_shape):
         self.inputShape = input_shape
         return (input_shape[0],input_shape[1],input_shape[2], self.n_classes)
+    
+    def get_feature_extractor(self):
+        if self.feature_extractor == None:
+            self.feature_extractor = tf.keras.models.Model(
+                inputs=self.get_vgg19().input,
+                outputs=[self.get_vgg19().get_layer('block1_pool').output,
+                        self.get_vgg19().get_layer('block2_pool').output,
+                        self.get_vgg19().get_layer('block3_pool').output,
+                        self.get_vgg19().get_layer('block4_pool').output,
+                        self.vgg19.get_layer('block5_pool').output])
+        return self.feature_extractor
+        
 
     def call(self, inputs):
 
-        pool1, pool2, pool3, pool4, pool5 = self.feature_extractor(inputs)     
+
+        pool1, pool2, pool3, pool4, pool5 = self.feature_extractor()(inputs)     
         x = self.convT(pool5)
         x = self.final(x)
      

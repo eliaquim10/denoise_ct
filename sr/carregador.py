@@ -145,17 +145,19 @@ class Loader:
         return ds
     
     def get_elements(self):
+        """
         dataset = self.load()
         for file_entrada, file_target in dataset:
             dataset = self.load_file(entrada = file_entrada, target = file_target, random_transform = self.subset == "train") 
             for entrada, target in dataset:
                 yield entrada, target
+        """
         
-        # dataset = self.load()
-        # for file_entrada, file_target in dataset:
-        #     for ds in self.load_slice(file_entrada, file_target):
-        #         for entrada, target in self.pre_processing(ds):
-        #             yield entrada, target
+        dataset = self.load()
+        for file_entrada, file_target in dataset:
+            for ds in self.load_slice(file_entrada, file_target):
+                for entrada, target in self.pre_processing(ds, self.subset == 'train'):
+                    yield entrada, target
 
     def dataset(self, batch_size=16, repeat_count=None, random_transform=True):
         # ds = tf.data.Dataset.zip((self.input_dataset(), self.target_dataset()))
@@ -311,11 +313,11 @@ class Loader:
         return tf.data.Dataset.from_tensor_slices(entrada), tf.data.Dataset.from_tensor_slices(target) 
     
     @staticmethod
-    def _images_load_slice(entrada, target, slice = 40):  
+    def _images_load_slice(entrada, target, slice = 100):  
         entrada, target =  bytes.decode(entrada.numpy()), bytes.decode(target.numpy())
         # entrada, target = load_lazy(entrada), load_lazy(target)
         entrada, target = nib.load(entrada), nib.load(target)
-        for i in range(entrada.shape[-1]):
+        for i in range(0, entrada.shape[-1], slice):
             entrada_slicer = entrada.slicer[:,:,i:i + slice]
             entrada_slicer = entrada_slicer.get_fdata()
             entrada_slicer = entrada_slicer.transpose((2,0,1))

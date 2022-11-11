@@ -1,6 +1,5 @@
 from tensorflow.keras.layers import Add, BatchNormalization, Conv2D, Dense, Flatten, Input, LeakyReLU, PReLU, Lambda, ReLU, Concatenate, MaxPooling2D, Dropout
 from tensorflow.keras.models import Model
-# from tensorflow.keras.applications.vgg19 import VGG19
 from tensorflow.keras.activations import relu
 
 # from model.common import pixel_shuffle, normalize_01, normalize_m11, denormalize_m11
@@ -13,13 +12,11 @@ import datetime
 # from model import evaluate
 # from model import srgan
 
-# from tensorflow.keras.applications.vgg19 import preprocess_input
 from tensorflow.keras.losses import BinaryCrossentropy
 # from tensorflow.keras.losses import MeanAbsoluteError
 # from tensorflow.keras.losses import MeanSquaredError
 from tensorflow.keras.losses import SparseCategoricalCrossentropy, CategoricalCrossentropy
 from tensorflow.keras.metrics import Mean, RootMeanSquaredError, MeanSquaredError, MeanAbsoluteError
-# MeanSquaredError
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.optimizers.schedules import PiecewiseConstantDecay
 

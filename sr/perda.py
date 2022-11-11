@@ -27,7 +27,7 @@ class DiceLoss(tf.losses.Loss):
         model.compile('SGD', loss=loss)
     """
 
-    def __init__(self, beta=1, class_weights=None, class_indexes=None, per_image=False, smooth=1e-5):
+    def __init__(self, beta=1, class_weights=None, class_indexes=2, per_image=False, smooth=1e-5):
         super().__init__(name='dice_loss')
         self.beta = beta
         self.class_weights = class_weights if class_weights is not None else 1
