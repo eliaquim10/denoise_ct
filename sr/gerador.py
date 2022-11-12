@@ -60,7 +60,6 @@ class FCN32(tf.keras.models.Model):
     
     def __init__(self, n_classes=2):
         super(FCN32, self).__init__()
-        self.vgg19 = self.vgg_19()
         self.n_classes = n_classes
         self.feature_extractor = None
         self.vgg19 = None
@@ -86,7 +85,7 @@ class FCN32(tf.keras.models.Model):
                         self.get_vgg19().get_layer('block2_pool').output,
                         self.get_vgg19().get_layer('block3_pool').output,
                         self.get_vgg19().get_layer('block4_pool').output,
-                        self.vgg19.get_layer('block5_pool').output])
+                        self.get_vgg19().get_layer('block5_pool').output])
         return self.feature_extractor
         
 

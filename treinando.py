@@ -18,18 +18,18 @@ args = parser.parse_args()
 model_name = "unet" if args.unet else "fcn32"
 print("model_name", model_name)
 losses = [
-    BinaryCrossentropy(),
-    CategoricalCrossentropy(),                                                                                                                              
-    DiceLoss(), 
-    FocalLoss(),
+    BinaryCrossentropy,
+    CategoricalCrossentropy,                                                                                                                              
+    DiceLoss, 
+    FocalLoss,
 ]
 unet = Gerador_UNet()
 models = [
-    FCN32(),
-    unet.generator_modify(),
+    FCN32,
+    unet.generator_modify,
 ]
-generator = models[args.unet]
-loss = losses[args.loss]
+generator = models[args.unet]()
+loss = losses[args.loss]()
 
 data_loader_train = Loader(size=args.size,
                 channel_img = bool(1 - args.unet),

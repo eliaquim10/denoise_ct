@@ -253,6 +253,7 @@ def evaluate(model, dataset):
         bc_mean(bc_value)
     # sleep(0.01)
     bc = bc_mean.result()
+    bc_mean.reset_states()
 
     return bc
 
