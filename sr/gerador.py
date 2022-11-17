@@ -9,63 +9,18 @@ def upsample(x_in, num_filters):
     return PReLU(shared_axes=[1, 2])(x)
 
 
-def res_block(x_in, num_filters, momentum=0.8):
-    x = Conv2D(num_filters, kernel_size=3, padding='same')(x_in)
-    x = BatchNormalization(momentum=momentum)(x)
-    x = PReLU(shared_axes=[1, 2])(x)
-    x = Conv2D(num_filters, kernel_size=3, padding='same')(x)
-    x = BatchNormalization(momentum=momentum)(x)
-    x = Add()([x_in, x])
-    return x
 
-
-def sr_resnet(num_filters=64, num_res_blocks=16):
-    x_in = Input(shape=(None, None, 3))
-    x = Lambda(normalize_01)(x_in)
-
-    x = Conv2D(num_filters, kernel_size=9, padding='same')(x)
-    x = x_1 = PReLU(shared_axes=[1, 2])(x)
-
-    for _ in range(num_res_blocks):
-        x = res_block(x, num_filters)
-
-    x = Conv2D(num_filters, kernel_size=3, padding='same')(x)
-    x = BatchNormalization()(x)
-    x = Add()([x_1, x])
-
-    x = upsample(x, num_filters * 4)
-    x = upsample(x, num_filters * 4)
-
-    x = Conv2D(3, kernel_size=9, padding='same', activation='tanh')(x)
-    x = Lambda(denormalize_m11)(x)
-
-    return Model(x_in, x)
-
-
-# generator = sr_resnet
-
-# vgg19 = tf.keras.applications.VGG19(include_top=False,
-#                                                 weights='imagenet',
-#                                                 input_shape=(None,None,3))
-
-# # vgg19.summary()
-
-# feature_extractor = tf.keras.models.Model(inputs=vgg19.input,
-#                                           outputs=[vgg19.get_layer('block1_pool').output,
-#                                                    vgg19.get_layer('block2_pool').output,
-#                                                    vgg19.get_layer('block3_pool').output,
-#                                                    vgg19.get_layer('block4_pool').output,
-#                                                    vgg19.get_layer('block5_pool').output])
 class FCN32(tf.keras.models.Model):
     
-    def __init__(self, n_classes=2):
+    def __init__(self, n_classes=2, activation=tf.keras.activations.softmax):
         super(FCN32, self).__init__()
         self.n_classes = n_classes
         self.feature_extractor = None
+        self.activation = activation
         self.vgg19 = None
  
         self.convT = tf.keras.layers.Conv2DTranspose(filters=self.n_classes, kernel_size=(32, 32), use_bias=False, strides=(32,32), padding='same')
-        self.final = tf.keras.layers.Conv2D(filters=self.n_classes, kernel_size=(8,8), activation='softmax', padding='same')
+        self.final = tf.keras.layers.Conv2D(filters=self.n_classes, kernel_size=(8,8), activation=activation, padding='same')
     def get_vgg19(self):
         if self.vgg19 == None:
             self.vgg19 = tf.keras.applications.VGG19(include_top=False,
@@ -98,119 +53,13 @@ class FCN32(tf.keras.models.Model):
      
         return x
 
-class UNET(tf.keras.models.Model):
-    
-    def __init__(self, n_classes, dropout=False, apply_batchnorm =True):
-        super(UNET, self).__init__()
-        self.n_classes = n_classes
-        self.dropout = dropout
-        self.apply_batchnorm = apply_batchnorm        
-        
-        initializer = tf.random_normal_initializer(0., 0.02)
-        self.inputs = tf.keras.layers.Input(shape=[None, None, 1])
-        
-        
-        self.last = tf.keras.layers.Conv2D(self.n_classes, 1,
-                                        strides=1,
-                                        padding='same',
-                                        kernel_initializer=initializer,
-                                        activation=tf.keras.activations.softmax, 
-                                        name = "last_layer") 
-    def compute_output_shape(self, input_shape):
-        self.inputShape = input_shape
-        return (input_shape[0],input_shape[1],input_shape[2], self.n_classes)
-    
-    def up(self, filters, training):
-        def up_return(x):
-
-            initializer = tf.random_normal_initializer(0., 0.02)
-            
-            conv_transpose = tf.keras.layers.Conv2DTranspose(filters, 2, strides=1,
-                                                padding='same',
-                                                kernel_initializer=initializer,
-                                                use_bias=True)(x)
-            conv1 = tf.keras.layers.Conv2D(filters, 3, strides=1, padding='same',
-                                        kernel_initializer=initializer, 
-                                        activation=tf.keras.activations.relu,
-                                        use_bias=True)(conv_transpose)
-            conv2 = tf.keras.layers.Conv2D(filters, 3, strides=1, padding='same',
-                                        kernel_initializer=initializer, 
-                                        activation=tf.keras.activations.relu,
-                                        use_bias=True)(conv1)
-            if(self.dropout):
-                dropout = tf.keras.layers.Dropout(0.5)(conv2, training)
-                return dropout
-            return conv2
-        return up_return
-
-    def down(self, filters, training):
-        def down_return(x):
-            initializer = tf.random_normal_initializer(0., 0.02)
-
-            f = tf.keras.layers.Conv2D(filters, 3, strides=1, padding='same',
-                                        kernel_initializer=initializer,
-                                        activation=relu)(x)
-            if self.apply_batchnorm and training:
-                ab1 = tf.keras.layers.BatchNormalization()(f)
-                f = tf.keras.layers.Conv2D(filters, 3, strides=1, padding='same',
-                                            kernel_initializer=initializer)(ab1)
-            else:
-                f = tf.keras.layers.Conv2D(filters, 3, strides=1, padding='same',
-                                            kernel_initializer=initializer)(f)
-
-            mp = tf.keras.layers.MaxPooling2D(pool_size=(2,2), strides=1, padding='same')(f)
-            if(self.dropout and training):                                        
-                dropout = tf.keras.layers.Dropout(0.3)(mp, training = training) 
-                return f, dropout
-            return f, mp
-        return down_return
-    
-
-    def call(self, inputs, training = False):
-
-        down_stack = [
-            self.down(64, training),  # (batch_size, 256, 256, 3) vs (batch_size, 128, 128, 64)
-            self.down(64*2, training),  # (batch_size, 128, 128, 64) vs (batch_size, 64, 64, 128)
-            self.down(64*4, training),  # (batch_size, 64, 64, 128) vs (batch_size, 32, 32, 256)
-            self.down(64*8, training),  # (batch_size, 32, 32, 256) vs (batch_size, 16, 16, 512)
-            self.down(64*16, training),  # (batch_size, 16, 16, 512) vs (batch_size, 8, 8, 512)
-        ]
-
-        up_stack = [
-            self.up(64*8, training),  # (batch_size, 8, 8, 64) vs (batch_size, 16, 16, 1024)
-            self.up(64*4, training),  # (batch_size, 16, 16, 64) vs (batch_size, 32, 32, 512)
-            self.up(64*2, training),  # (batch_size, 32, 32, 64) vs (batch_size, 64, 64, 256)
-            self.up(64, training),  # (batch_size, 64, 64, 64) vs (batch_size, 128, 128, 128)
-        ]
-
-        x = inputs
-        # Downsampling through the model
-        skips = []
-        for down in down_stack:
-            f, x = down(x)
-            skips.append(f)
-
-        skips = reversed(skips[:-1])
-
-        # Upsampling and establishing the skip connections
-        for up, skip in zip(up_stack, skips):
-            x = up(x)
-            x = Concatenate()([x, skip])
-
-        x = self.last(x)
-     
-        return x
-    def build_graph(self, raw_shape):
-        x = tf.keras.layers.Input(shape=raw_shape)
-        return tf.keras.Model(inputs=[x], outputs=self.call(x))
-    def fit(**args):
-        return super.fit(**args)
-
 class Gerador_UNet():
-    def __init__(self, LAMBDA = 100, loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)) -> None:
+    def __init__(self, LAMBDA=100, 
+                    activation=tf.keras.activations.sigmoid, 
+                    loss=tf.keras.losses.BinaryCrossentropy(from_logits=True)):
         self.loss = loss 
         self.LAMBDA = LAMBDA
-
+        self.activation = activation
         self.inputs = None
         self.down_stack = []
         self.up_stack = []
@@ -348,7 +197,7 @@ class Gerador_UNet():
                                         strides=1,
                                         padding='same',
                                         kernel_initializer=initializer,
-                                        activation=tf.keras.activations.sigmoid)  # (batch_size, 256, 256, 3) tanh # 'softmax'
+                                        activation=self.activation)  # (batch_size, 256, 256, 3) tanh # 'softmax'
                                         # activation=tf.keras.activations.softmax)  # (batch_size, 256, 256, 3) tanh # 'softmax'
 
         x = self.inputs
@@ -424,7 +273,7 @@ class Gerador_UNet():
                                         strides=1,
                                         padding='same',
                                         kernel_initializer=initializer,
-                                        activation=tf.keras.activations.softmax, 
+                                        activation=self.activation, 
                                         name = "last_layer")  # (batch_size, 256, 256, 3) tanh # 'softmax'
 
         x = inputs

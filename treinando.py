@@ -69,9 +69,9 @@ valid = data_loader_valid.get_elements
 # generator.load_weights(weights_file('pre_generator.h5'))
 trainer = GeneratorTrainer(model=generator,                                                                                                                   
                 loss = loss,                                                                                                                              
-                checkpoint_dir=f'.ckpt/seg_pre_generator_{model_name}', #from_logits = True
-                # learning_rate=1e-3
-                learning_rate=PiecewiseConstantDecay(boundaries=[1, 450, 500], values=[1e-5, 1e-5, 1e-7, 1e-7])  #, 1e-6
+                checkpoint_dir=f'ckpt/seg_pre_generator_{model_name}', #from_logits = True
+                learning_rate=4e-3
+                # learning_rate=PiecewiseConstantDecay(boundaries=[1, 450, 500], values=[1e-5, 1e-5, 1e-7, 1e-7])  #, 1e-6
                 )
 trainer.train(train,
                 valid,

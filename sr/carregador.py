@@ -79,8 +79,8 @@ class Loader:
 
         return ds
 
-    def load_slice(self, file_entrada, file_target):
-        for entrada, target in self._images_load_slice(file_entrada, file_target):
+    def load_slice(self, file_entrada, file_target, number_slice):
+        for entrada, target in self._images_load_slice(file_entrada, file_target, number_slice):
             yield tf.data.Dataset.zip((entrada, target))
 
     def load_file(self, entrada, target, random_transform=False):
@@ -155,7 +155,7 @@ class Loader:
         
         dataset = self.load()
         for file_entrada, file_target in dataset:
-            for ds in self.load_slice(file_entrada, file_target):
+            for ds in self.load_slice(file_entrada, file_target, 300):
                 for entrada, target in self.pre_processing(ds, self.subset == 'train'):
                     yield entrada, target
 
@@ -313,16 +313,16 @@ class Loader:
         return tf.data.Dataset.from_tensor_slices(entrada), tf.data.Dataset.from_tensor_slices(target) 
     
     @staticmethod
-    def _images_load_slice(entrada, target, slice = 100):  
+    def _images_load_slice(entrada, target, number_slice = 100):  
         entrada, target =  bytes.decode(entrada.numpy()), bytes.decode(target.numpy())
         # entrada, target = load_lazy(entrada), load_lazy(target)
         entrada, target = nib.load(entrada), nib.load(target)
-        for i in range(0, entrada.shape[-1], slice):
-            entrada_slicer = entrada.slicer[:,:,i:i + slice]
+        for i in range(0, entrada.shape[-1], number_slice):
+            entrada_slicer = entrada.slicer[:,:,i:i + number_slice]
             entrada_slicer = entrada_slicer.get_fdata()
             entrada_slicer = entrada_slicer.transpose((2,0,1))
 
-            target_slicer = target.slicer[:,:,i:i + slice]
+            target_slicer = target.slicer[:,:,i:i + number_slice]
             target_slicer = target_slicer.get_fdata()
             target_slicer = target_slicer.transpose((2,0,1))
             
